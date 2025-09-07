@@ -1,0 +1,35 @@
+# ==================== Kconfig.projbuild ====================
+
+menu "ESP32 Energy Meter Configuration"
+
+    config ENERGY_METER_MQTT_BROKER_URL
+        string "MQTT Broker URL"
+        default "mqtts://your-broker.com"
+        help
+            MQTT broker URL with protocol (mqtts:// for SSL)
+
+    config ENERGY_METER_MQTT_USERNAME
+        string "MQTT Username"
+        default "your_username"
+        help
+            Username for MQTT broker authentication
+
+    config ENERGY_METER_MQTT_PASSWORD
+        string "MQTT Password"
+        default "your_password"
+        help
+            Password for MQTT broker authentication
+
+    config ENERGY_METER_WIFI_SSID
+        string "Default WiFi SSID"
+        default "ESP32_Energy_Meter"
+        help
+            Default WiFi SSID for provisioning mode
+
+    config ENERGY_METER_WIFI_PASSWORD
+        string "Default WiFi Password"
+        default "energy123"
+        help
+            Default WiFi password for provisioning mode
+
+endmenu
