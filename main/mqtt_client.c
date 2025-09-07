@@ -9,31 +9,23 @@ esp_err_t mqtt_client_init(void)
 {
     ESP_LOGI(MQTT_TAG, "Initializing MQTT client with SSL/TLS...");
     
+    // ESP-IDF v4.4 style configuration
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker = {
-            .address.uri = MQTT_BROKER_URL,
-            .address.port = MQTT_BROKER_PORT,
-            .verification.certificate = (const char *)mqtt_broker_cert_pem_start,
-            .verification.certificate_len = mqtt_broker_cert_pem_end - mqtt_broker_cert_pem_start,
-            .verification.skip_cert_common_name_check = false,
-        },
-        .credentials = {
-            .client_id = MQTT_CLIENT_ID,
-            .username = MQTT_USERNAME,
-            .authentication.password = MQTT_PASSWORD,
-        },
-        .session = {
-            .keepalive = 60,
-            .disable_clean_session = false,
-        },
-        .network = {
-            .timeout_ms = 5000,
-            .refresh_connection_after_ms = 20000,
-        },
-        .buffer = {
-            .size = 4096,
-            .out_size = 4096,
-        }
+        .uri = MQTT_BROKER_URL,
+        .port = MQTT_BROKER_PORT,
+        .client_id = MQTT_CLIENT_ID,
+        .username = MQTT_USERNAME,
+        .password = MQTT_PASSWORD,
+        .keepalive = 60,
+        .disable_clean_session = false,
+        .network_timeout_ms = 5000,
+        .refresh_connection_after_ms = 20000,
+        .buffer_size = 4096,
+        .out_buffer_size = 4096,
+        .cert_pem = (const char *)mqtt_broker_cert_pem_start,
+        .cert_len = mqtt_broker_cert_pem_end - mqtt_broker_cert_pem_start,
+        .skip_cert_common_name_check = false,
+        .transport = MQTT_TRANSPORT_OVER_SSL,
     };
     
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
@@ -42,7 +34,7 @@ esp_err_t mqtt_client_init(void)
         return ESP_FAIL;
     }
     
-    ESP_ERROR_CHECK(esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL));
+    esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, mqtt_client);
     
     ESP_LOGI(MQTT_TAG, "MQTT SSL/TLS client initialized successfully");
     return ESP_OK;
@@ -78,18 +70,12 @@ void mqtt_client_stop(void)
 
 // ==================== MQTT EVENT HANDLER ====================
 
-// Replace the old function signature:
-// esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
-
-// With this new ESP-IDF v4.4 compatible signature:
-esp_err_t mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
+// ESP-IDF v4.4 compatible event handler
+esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 {
-    ESP_LOGD(MQTT_TAG, "Event dispatched from event loop base=%s, event_id=%d", base, event_id);
-    
-    esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
     esp_mqtt_client_handle_t client = event->client;
     
-    switch ((esp_mqtt_event_id_t)event_id) {
+    switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(MQTT_TAG, "MQTT Connected to broker with SSL/TLS encryption");
             mqtt_connected = true;
@@ -156,7 +142,7 @@ esp_err_t mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t 
             break;
             
         case MQTT_EVENT_ERROR:
-            ESP_LOGW(MQTT_TAG, "MQTT SSL Error occurred: %d", event->error_handle->error_type);
+            ESP_LOGW(MQTT_TAG, "MQTT SSL Error occurred");
             if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
                 ESP_LOGW(MQTT_TAG, "SSL/TLS transport error: 0x%x", event->error_handle->esp_tls_last_esp_err);
                 ESP_LOGW(MQTT_TAG, "SSL/TLS stack error: 0x%x", event->error_handle->esp_tls_stack_err);
@@ -259,7 +245,7 @@ void publish_sensor_data(complete_data_packet_t *packet)
     if (json_string) {
         int msg_id = esp_mqtt_client_publish(mqtt_client, MQTT_TOPIC_DATA, json_string, 0, 1, 0);
         if (msg_id != -1) {
-            ESP_LOGD(MQTT_TAG, "Sensor data published: ID=%lu, Power=%.1fW, Sensors=%d", 
+            ESP_LOGD(MQTT_TAG, "Sensor data published: ID=%u, Power=%.1fW, Sensors=%d", 
                      packet->packet_id, total_power, connected_sensors);
         }
         free(json_string);

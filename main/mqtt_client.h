@@ -24,13 +24,10 @@ void mqtt_client_stop(void);
 
 /**
  * @brief MQTT event handler (ESP-IDF v4.4 compatible)
- * @param handler_args Handler arguments
- * @param base Event base
- * @param event_id Event ID
- * @param event_data Event data
+ * @param event MQTT event handle
  * @return ESP_OK on success
  */
-esp_err_t mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
+esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event);
 
 /**
  * @brief Publish complete sensor data packet
