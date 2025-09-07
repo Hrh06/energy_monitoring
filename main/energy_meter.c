@@ -25,28 +25,28 @@ esp_err_t energy_meter_init(void)
         return ESP_ERR_NO_MEM;
     }
     
-    // Characterize ADC
-    esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, adc_chars);
+    // Characterize ADC - FIXED: Use ADC_ATTEN_DB_12 instead of deprecated ADC_ATTEN_DB_11
+    esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_12, ADC_WIDTH_BIT_12, 1100, adc_chars);
     
-    // Configure voltage sensor pin (GPIO 34)
-    ret = adc1_config_channel_atten(VOLTAGE_SENSOR_PIN, ADC_ATTEN_DB_11);
+    // Configure voltage sensor pin (GPIO 34) - FIXED: Use ADC_ATTEN_DB_12
+    ret = adc1_config_channel_atten(VOLTAGE_SENSOR_PIN, ADC_ATTEN_DB_12);
     if (ret != ESP_OK) {
         ESP_LOGE(ENERGY_TAG, "Failed to configure voltage sensor ADC: %s", esp_err_to_name(ret));
         return ret;
     }
     
-    // Configure current sensor pin (GPIO 35)
-    ret = adc1_config_channel_atten(CURRENT_SENSOR_PIN, ADC_ATTEN_DB_11);
+    // Configure current sensor pin (GPIO 35) - FIXED: Use ADC_ATTEN_DB_12
+    ret = adc1_config_channel_atten(CURRENT_SENSOR_PIN, ADC_ATTEN_DB_12);
     if (ret != ESP_OK) {
         ESP_LOGE(ENERGY_TAG, "Failed to configure current sensor ADC: %s", esp_err_to_name(ret));
         return ret;
     }
     
-    // Configure additional channels for multi-channel monitoring
+    // Configure additional channels for multi-channel monitoring - FIXED: Use ADC_ATTEN_DB_12
     for (int i = 0; i < NUM_CHANNELS && i < 8; i++) {
         adc1_channel_t channel = ADC1_CHANNEL_0 + i;
         if (channel <= ADC1_CHANNEL_7) {
-            adc1_config_channel_atten(channel, ADC_ATTEN_DB_11);
+            adc1_config_channel_atten(channel, ADC_ATTEN_DB_12);
         }
     }
     
@@ -57,7 +57,7 @@ esp_err_t energy_meter_init(void)
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT,
+        .source_clk = UART_SCLK_APB,  // FIXED: Use UART_SCLK_APB instead of UART_SCLK_DEFAULT
     };
     
     ret = uart_driver_install(UART_NUM, UART_BUF_SIZE * 2, 0, 0, NULL, 0);
@@ -273,9 +273,9 @@ void processing_task(void *pvParameters)
                 
                 cycle_count = 0;
                 
-                ESP_LOGD(ENERGY_TAG, "Packet processed: ID=%lu, V=%.1fV, I=%.2fA, P=%.1fW", 
-                         packet.packet_id, packet.system_voltage, 
-                         packet.channels[0].current_rms, packet.channels[0].power_real);
+                ESP_LOGD(ENERGY_TAG, "Packet processed: ID=%u, V=%.1fV, I=%.2fA, P=%.1fW", 
+                    packet.packet_id, packet.system_voltage, 
+                    packet.channels[0].current_rms, packet.channels[0].power_real);
             }
         }
     }
@@ -380,7 +380,7 @@ void button_task(void *pvParameters)
                 TickType_t press_duration = current_time - press_start_time;
                 TickType_t press_duration_ms = pdTICKS_TO_MS(press_duration);
                 
-                ESP_LOGI(ENERGY_TAG, "Reset button released after %lu ms", press_duration_ms);
+                ESP_LOGI(ENERGY_TAG, "Reset button released after %u ms", press_duration_ms);
                 
                 // Check for 3-second WiFi reset
                 if (press_duration_ms >= WIFI_RESET_HOLD_TIME_MS && press_duration_ms < HOTSPOT_HOLD_TIME_MS) {

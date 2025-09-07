@@ -119,7 +119,8 @@ esp_err_t wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
                 break;
                 
             default:
-                ESP_LOGD(WIFI_TAG, "Unhandled WiFi event: %ld", event_id);
+                // FIXED: Change %ld to %d for int32_t
+                ESP_LOGD(WIFI_TAG, "Unhandled WiFi event: %d", event_id);
                 break;
         }
     } else if (event_base == IP_EVENT) {

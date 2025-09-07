@@ -21,10 +21,10 @@
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "esp_adc_cal.h"
-//#include "mqtt_client.h"
+#include "mqtt_client.h"  // ESP-IDF MQTT client - UNCOMMENTED
 #include "cJSON.h"
 #include "esp_http_server.h"
-//#include "esp_https_server.h"
+#include "esp_https_server.h"  // Added for HTTPS support
 #include "esp_tls.h"
 #include "esp_crt_bundle.h"
 
@@ -200,7 +200,7 @@ void restore_relay_states_from_nvs(void);
 
 // WiFi Manager functions
 esp_err_t wifi_manager_init(void);
-esp_err_t wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 void start_provisioning_mode(void);
 void stop_provisioning_mode(void);
 esp_err_t root_handler(httpd_req_t *req);
@@ -208,7 +208,7 @@ esp_err_t wifi_credentials_handler(httpd_req_t *req);
 
 // MQTT Client functions
 esp_err_t mqtt_client_init(void);
-esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event);
+void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
 void mqtt_client_start(void);
 void publish_sensor_data(complete_data_packet_t *packet);
 void publish_relay_status(void);

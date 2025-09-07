@@ -11,21 +11,34 @@ esp_err_t mqtt_client_init(void)
     
     // ESP-IDF v4.4 style configuration
     esp_mqtt_client_config_t mqtt_cfg = {
-        .uri = MQTT_BROKER_URL,
-        .port = MQTT_BROKER_PORT,
-        .client_id = MQTT_CLIENT_ID,
-        .username = MQTT_USERNAME,
-        .password = MQTT_PASSWORD,
-        .keepalive = 60,
-        .disable_clean_session = false,
-        .network_timeout_ms = 5000,
-        .refresh_connection_after_ms = 20000,
-        .buffer_size = 4096,
-        .out_buffer_size = 4096,
-        .cert_pem = (const char *)mqtt_broker_cert_pem_start,
-        .cert_len = mqtt_broker_cert_pem_end - mqtt_broker_cert_pem_start,
-        .skip_cert_common_name_check = false,
-        .transport = MQTT_TRANSPORT_OVER_SSL,
+        .broker = {
+            .address = {
+                .uri = MQTT_BROKER_URL,
+                .port = MQTT_BROKER_PORT,
+            },
+            .verification = {
+                .certificate = (const char *)mqtt_broker_cert_pem_start,
+                .certificate_len = mqtt_broker_cert_pem_end - mqtt_broker_cert_pem_start,
+                .skip_cert_common_name_check = false,
+            }
+        },
+        .credentials = {
+            .client_id = MQTT_CLIENT_ID,
+            .username = MQTT_USERNAME,
+            .password = MQTT_PASSWORD,
+        },
+        .session = {
+            .keepalive = 60,
+            .disable_clean_session = false,
+        },
+        .network = {
+            .timeout_ms = 5000,
+            .refresh_connection_after_ms = 20000,
+        },
+        .buffer = {
+            .size = 4096,
+            .out_size = 4096,
+        },
     };
     
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
@@ -71,11 +84,12 @@ void mqtt_client_stop(void)
 // ==================== MQTT EVENT HANDLER ====================
 
 // ESP-IDF v4.4 compatible event handler
-esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
+void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
+    esp_mqtt_event_handle_t event = event_data;
     esp_mqtt_client_handle_t client = event->client;
     
-    switch (event->event_id) {
+    switch (event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(MQTT_TAG, "MQTT Connected to broker with SSL/TLS encryption");
             mqtt_connected = true;
@@ -155,10 +169,9 @@ esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
             break;
             
         default:
-            ESP_LOGD(MQTT_TAG, "MQTT SSL Other event id: %d", event->event_id);
+            ESP_LOGD(MQTT_TAG, "MQTT SSL Other event id: %d", event_id);
             break;
     }
-    return ESP_OK;
 }
 
 // ==================== PUBLISH FUNCTIONS ====================

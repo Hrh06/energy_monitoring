@@ -16,7 +16,6 @@ idf_component_register(
         esp_netif
         esp_event
         esp_http_server
-        esp_https_server
         esp-tls
         mqtt
         json
@@ -39,6 +38,20 @@ idf_component_register(
         heap
         pthread
         esp_pm
+        esp_rom        # Added for ESP-IDF v4.4
+        soc            # Added for ESP-IDF v4.4
+        xtensa         # Added for ESP-IDF v4.4
+        newlib         # Added for ESP-IDF v4.4
+        esp_ipc        # Added for ESP-IDF v4.4
+        esp_phy        # Added for ESP-IDF v4.4
+        efuse          # Added for ESP-IDF v4.4
+        esp32          # Added for ESP-IDF v4.4
+        vfs            # Added for ESP-IDF v4.4
+        esp_eth        # Added for ESP-IDF v4.4
+        tcpip_adapter  # Added for ESP-IDF v4.4
+        app_trace      # Added for ESP-IDF v4.4
+        spi_flash      # Added for ESP-IDF v4.4
+        nghttp         # Added for ESP-IDF v4.4
     EMBED_FILES
         "../certs/mqtt_broker_cert.pem"
         "../certs/server_cert.pem"

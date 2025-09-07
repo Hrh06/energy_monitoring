@@ -2,7 +2,8 @@
 #define MQTT_CLIENT_H
 
 #include "common.h"
-#include "mqtt_client.h"
+// NOTE: Do not include "mqtt_client.h" here to avoid circular dependency
+// The ESP-IDF mqtt_client.h is included in common.h
 
 // ==================== MQTT CLIENT FUNCTIONS ====================
 
@@ -24,10 +25,12 @@ void mqtt_client_stop(void);
 
 /**
  * @brief MQTT event handler (ESP-IDF v4.4 compatible)
- * @param event MQTT event handle
- * @return ESP_OK on success
+ * @param handler_args Event handler arguments
+ * @param base Event base
+ * @param event_id Event ID
+ * @param event_data Event data
  */
-esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event);
+void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
 
 /**
  * @brief Publish complete sensor data packet
