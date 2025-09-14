@@ -1,7 +1,7 @@
 #include "common.h"
 #include "nvs_storage.h"
 #include "wifi_manager.h"
-#include "mqtt_client.h"
+#include "mqtt_client_own.h"
 #include "relay_control.h"
 #include "energy_meter.h"
 

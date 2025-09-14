@@ -1,5 +1,5 @@
-#ifndef MQTT_CLIENT_H
-#define MQTT_CLIENT_H
+#ifndef MQTT_CLIENT_OWN_H
+#define MQTT_CLIENT_OWN_H
 
 #include "common.h"
 // NOTE: Do not include "mqtt_client.h" here to avoid circular dependency

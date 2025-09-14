@@ -1,4 +1,4 @@
-#include "mqtt_client.h"
+#include "mqtt_client_own.h"
 #include "relay_control.h"
 
 static const char* MQTT_TAG = "MQTT_CLIENT";

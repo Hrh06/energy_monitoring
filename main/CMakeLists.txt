@@ -5,9 +5,10 @@ idf_component_register(
         "main.c"
         "nvs_storage.c"
         "wifi_manager.c"
-        "mqtt_client.c"
+        "mqtt_client_own.c"
         "relay_control.c"
         "energy_meter.c"
+        "https_server.c"        
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -16,6 +17,7 @@ idf_component_register(
         esp_netif
         esp_event
         esp_http_server
+        esp_https_server
         esp-tls
         mqtt
         json

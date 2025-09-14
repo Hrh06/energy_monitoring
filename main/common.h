@@ -27,7 +27,6 @@
 #include "esp_https_server.h"  // Added for HTTPS support
 #include "esp_tls.h"
 #include "esp_crt_bundle.h"
-
 // ==================== CONFIGURATION ====================
 
 // System Configuration
@@ -59,10 +58,10 @@
 #define PROVISIONING_TIMEOUT_MS 300000
 
 // MQTT Configuration
-#define MQTT_BROKER_URL "mqtts://your-mqtt-broker.com"
+#define MQTT_BROKER_URL "32821620fa6640e3b91fecff79c3dcce.s1.eu.hivemq.cloud:8883"
 #define MQTT_BROKER_PORT 8883
-#define MQTT_USERNAME "your_username"
-#define MQTT_PASSWORD "your_password"
+#define MQTT_USERNAME "Bitminds"
+#define MQTT_PASSWORD "Bitminds@123456"
 #define MQTT_CLIENT_ID "esp32_energy_meter"
 
 // MQTT Topics

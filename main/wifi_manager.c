@@ -61,7 +61,7 @@ esp_err_t wifi_connect(const char* ssid, const char* password)
 
 // ==================== EVENT HANDLERS ====================
 
-esp_err_t wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT) {
         switch (event_id) {
@@ -142,8 +142,6 @@ esp_err_t wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
             mqtt_client_start();
         }
     }
-    
-    return ESP_OK;
 }
 
 // ==================== UTILITY FUNCTIONS ====================
@@ -227,11 +225,12 @@ void start_provisioning_mode(void)
         ESP_LOGW(WIFI_TAG, "HTTPS server failed, starting HTTP fallback");
         
         // Fallback to HTTP server
-        httpd_config_t http_config = HTTPD_DEFAULT_CONFIG();
-        http_config.server_port = 80;
-        http_config.stack_size = 8192;
-        
-        if (httpd_start(&server, &http_config) == ESP_OK) {
+        httpd_config_t conf = HTTPD_DEFAULT_CONFIG();
+        conf.server_port = 80;  // Use HTTP port 80
+        conf.max_uri_handlers = 8;
+        conf.stack_size = 8192;
+    
+        if (httpd_start(&server, &conf) == ESP_OK) {
             ESP_LOGI(WIFI_TAG, "HTTP server started on http://192.168.4.1");
         } else {
             ESP_LOGE(WIFI_TAG, "Failed to start web server");
