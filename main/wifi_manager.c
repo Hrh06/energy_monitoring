@@ -209,33 +209,18 @@ void start_provisioning_mode(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
     
-    // Start HTTPS web server (with fallback to HTTP)
-    httpd_ssl_config_t conf = HTTPD_SSL_CONFIG_DEFAULT();
-    conf.httpd.server_port = 443;
-    conf.httpd.max_uri_handlers = 8;
-    conf.httpd.stack_size = 8192;
-    conf.servercert = (const uint8_t *)server_cert_pem_start;
-    conf.servercert_len = server_cert_pem_end - server_cert_pem_start;
-    conf.prvtkey_pem = (const uint8_t *)server_key_pem_start;
-    conf.prvtkey_len = server_key_pem_end - server_key_pem_start;
+    // Fallback to HTTP server
+    httpd_config_t conf = HTTPD_DEFAULT_CONFIG();
+    conf.server_port = 80;  // Use HTTP port 80
+    conf.max_uri_handlers = 8;
+    conf.stack_size = 6144;
+    conf.task_priority = tskIDLE_PRIORITY + 5;
     
-    if (httpd_ssl_start(&server, &conf) == ESP_OK) {
-        ESP_LOGI(WIFI_TAG, "HTTPS server started on https://192.168.4.1");
+    if (httpd_start(&server, &conf) == ESP_OK) {
+        ESP_LOGI(WIFI_TAG, "HTTP server started on http://192.168.4.1");
     } else {
-        ESP_LOGW(WIFI_TAG, "HTTPS server failed, starting HTTP fallback");
-        
-        // Fallback to HTTP server
-        httpd_config_t conf = HTTPD_DEFAULT_CONFIG();
-        conf.server_port = 80;  // Use HTTP port 80
-        conf.max_uri_handlers = 8;
-        conf.stack_size = 8192;
-    
-        if (httpd_start(&server, &conf) == ESP_OK) {
-            ESP_LOGI(WIFI_TAG, "HTTP server started on http://192.168.4.1");
-        } else {
-            ESP_LOGE(WIFI_TAG, "Failed to start web server");
-            return;
-        }
+        ESP_LOGE(WIFI_TAG, "Failed to start web server");
+        return;
     }
     
     // Register URI handlers

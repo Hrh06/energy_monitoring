@@ -11,34 +11,20 @@ esp_err_t mqtt_client_init(void)
     
     // ESP-IDF v4.4 style configuration
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker = {
-            .address = {
-                .uri = MQTT_BROKER_URL,
-                .port = MQTT_BROKER_PORT,
-            },
-            .verification = {
-                .certificate = (const char *)mqtt_broker_cert_pem_start,
-                .certificate_len = mqtt_broker_cert_pem_end - mqtt_broker_cert_pem_start,
-                .skip_cert_common_name_check = false,
-            }
-        },
-        .credentials = {
-            .client_id = MQTT_CLIENT_ID,
-            .username = MQTT_USERNAME,
-            .password = MQTT_PASSWORD,
-        },
-        .session = {
-            .keepalive = 60,
-            .disable_clean_session = false,
-        },
-        .network = {
-            .timeout_ms = 5000,
-            .refresh_connection_after_ms = 20000,
-        },
-        .buffer = {
-            .size = 4096,
-            .out_size = 4096,
-        },
+        .uri = MQTT_BROKER_URL,
+        .username = MQTT_USERNAME,
+        .password = MQTT_PASSWORD,
+        .client_id = MQTT_CLIENT_ID,
+        .keepalive = 60,
+        .cert_pem = (const char *)mqtt_broker_cert_pem_start,
+        .cert_len = mqtt_broker_cert_pem_end - mqtt_broker_cert_pem_start,
+        .port = MQTT_BROKER_PORT,
+        .skip_cert_common_name_check = false,
+        .disable_clean_session = false,
+        .network_timeout_ms = 5000,
+        .refresh_connection_after_ms = 20000,
+        .buffer_size = 4096,
+        .out_buffer_size = 4096,
     };
     
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
@@ -95,10 +81,10 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             mqtt_connected = true;
             
             // Subscribe to command topics
-            int msg_id = esp_mqtt_client_subscribe(mqtt_client, MQTT_TOPIC_RELAY_CONTROL, 1);
+            int msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_RELAY_CONTROL, 1);
             ESP_LOGI(MQTT_TAG, "Subscribed to relay control topic, msg_id=%d", msg_id);
             
-            msg_id = esp_mqtt_client_subscribe(mqtt_client, MQTT_TOPIC_COMMANDS, 1);
+            msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_COMMANDS, 1);
             ESP_LOGI(MQTT_TAG, "Subscribed to commands topic, msg_id=%d", msg_id);
             
             // Publish initial status

@@ -7,8 +7,7 @@ idf_component_register(
         "wifi_manager.c"
         "mqtt_client_own.c"
         "relay_control.c"
-        "energy_meter.c"
-        "https_server.c"        
+        "energy_meter.c"      
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -17,7 +16,6 @@ idf_component_register(
         esp_netif
         esp_event
         esp_http_server
-        esp_https_server
         esp-tls
         mqtt
         json
@@ -56,8 +54,6 @@ idf_component_register(
         nghttp         # Added for ESP-IDF v4.4
     EMBED_FILES
         "../certs/mqtt_broker_cert.pem"
-        "../certs/server_cert.pem"
-        "../certs/server_key.pem"
 )
 
 # Auto-create certificates if they don't exist
@@ -84,28 +80,4 @@ AYYwHQYDVR0OBBYEFIQYzIU07LwMlJQuCFmcx7IQTgoIMA0GCSqGSIb3DQEBCwUA
 A4IBAQCY8jdaQZChGsV2USggNiMOruYou6r4lK5IpDB/G/wkjUu0yKGX9rbxenDI
 U5PMCCjjmCXPI6T53iHTfIuJruydjsw2hUwsqdnksL6GjubTOB+Ureo0SKHM6v8P
 -----END CERTIFICATE-----")
-endif()
-
-# Create dummy server certificate
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/certs/server_cert.pem")
-    file(WRITE "${CMAKE_SOURCE_DIR}/certs/server_cert.pem"
-"-----BEGIN CERTIFICATE-----
-MIIDXTCCAkWgAwIBAgIJAKoK/heBjcOuMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV
-BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX
-aWRnaXRzIFB0eSBMdGQwHhcNMTgxMjI4MjI0NTM4WhcNMjgxMjI1MjI0NTM4WjBF
-MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50
-ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB
-CgKCAQEAy8dbwAD1VfpA5EWVHlzQ2v2jmfb5ZbZHgOSJ7pOaQJiV6xN7kZHjGqxE
-K6xN7kZHjGqxEK6xN7kZHjGqxEK6xN7kZHjGqxEK6xN7kZHjGqxEK6xN7kZHjGqx
------END CERTIFICATE-----")
-endif()
-
-# Create dummy server key
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/certs/server_key.pem")
-    file(WRITE "${CMAKE_SOURCE_DIR}/certs/server_key.pem"
-"-----BEGIN PRIVATE KEY-----
-MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDLx1vAAPVV+kDk
-RZUeXNDa/aOZ9vlltkeA5Inuk5pAmJXrE3uRkeMarESKz7w5xgxZm3QnZoZYZgP8
-K6xN7kZHjGqxEK6xN7kZHjGqxEK6xN7kZHjGqxEK6xN7kZHjGqxEK6xN7kZHjGqx
------END PRIVATE KEY-----")
 endif()

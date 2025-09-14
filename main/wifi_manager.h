@@ -19,7 +19,7 @@ esp_err_t wifi_manager_init(void);
  * @param event_data Event data
  * @return ESP_OK on success
  */
-esp_err_t wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
 /**
  * @brief Start WiFi provisioning mode (hotspot + web server)

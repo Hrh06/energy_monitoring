@@ -24,9 +24,8 @@
 #include "mqtt_client.h"  // ESP-IDF MQTT client - UNCOMMENTED
 #include "cJSON.h"
 #include "esp_http_server.h"
-#include "esp_https_server.h"  // Added for HTTPS support
 #include "esp_tls.h"
-#include "esp_crt_bundle.h"
+//#include "esp_crt_bundle.h"
 // ==================== CONFIGURATION ====================
 
 // System Configuration
@@ -58,7 +57,7 @@
 #define PROVISIONING_TIMEOUT_MS 300000
 
 // MQTT Configuration
-#define MQTT_BROKER_URL "32821620fa6640e3b91fecff79c3dcce.s1.eu.hivemq.cloud:8883"
+#define MQTT_BROKER_URL "mqtts://32821620fa6640e3b91fecff79c3dcce.s1.eu.hivemq.cloud:8883"
 #define MQTT_BROKER_PORT 8883
 #define MQTT_USERNAME "Bitminds"
 #define MQTT_PASSWORD "Bitminds@123456"
@@ -180,10 +179,6 @@ extern TaskHandle_t button_task_handle;
 // SSL Certificates (extern references)
 extern const uint8_t mqtt_broker_cert_pem_start[] asm("_binary_mqtt_broker_cert_pem_start");
 extern const uint8_t mqtt_broker_cert_pem_end[]   asm("_binary_mqtt_broker_cert_pem_end");
-extern const uint8_t server_cert_pem_start[] asm("_binary_server_cert_pem_start");
-extern const uint8_t server_cert_pem_end[]   asm("_binary_server_cert_pem_end");
-extern const uint8_t server_key_pem_start[] asm("_binary_server_key_pem_start");
-extern const uint8_t server_key_pem_end[]   asm("_binary_server_key_pem_end");
 
 // ==================== FUNCTION PROTOTYPES ====================
 

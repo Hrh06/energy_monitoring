@@ -259,28 +259,6 @@ void save_certificates_to_nvs(void)
         }
     }
     
-    // Store server certificate
-    size_t server_cert_len = server_cert_pem_end - server_cert_pem_start;
-    if (server_cert_len > 0) {
-        err = nvs_set_blob(nvs_handle, "server_cert", server_cert_pem_start, server_cert_len);
-        if (err != ESP_OK) {
-            ESP_LOGE(NVS_TAG, "Error saving server certificate: %s", esp_err_to_name(err));
-        } else {
-            ESP_LOGI(NVS_TAG, "Server certificate saved (%d bytes)", server_cert_len);
-        }
-    }
-    
-    // Store server private key
-    size_t server_key_len = server_key_pem_end - server_key_pem_start;
-    if (server_key_len > 0) {
-        err = nvs_set_blob(nvs_handle, "server_key", server_key_pem_start, server_key_len);
-        if (err != ESP_OK) {
-            ESP_LOGE(NVS_TAG, "Error saving server private key: %s", esp_err_to_name(err));
-        } else {
-            ESP_LOGI(NVS_TAG, "Server private key saved (%d bytes)", server_key_len);
-        }
-    }
-    
     err = nvs_commit(nvs_handle);
     if (err != ESP_OK) {
         ESP_LOGE(NVS_TAG, "Error committing certificates: %s", esp_err_to_name(err));
