@@ -25,6 +25,7 @@ esp_err_t mqtt_client_init(void)
         .refresh_connection_after_ms = 20000,
         .buffer_size = 4096,
         .out_buffer_size = 4096,
+        .transport = MQTT_TRANSPORT_OVER_SSL,
     };
     
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
@@ -73,7 +74,7 @@ void mqtt_client_stop(void)
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     esp_mqtt_event_handle_t event = event_data;
-    esp_mqtt_client_handle_t client = event->client;
+    //esp_mqtt_client_handle_t client = event->client;
     
     switch (event_id) {
         case MQTT_EVENT_CONNECTED:
@@ -81,10 +82,10 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             mqtt_connected = true;
             
             // Subscribe to command topics
-            int msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_RELAY_CONTROL, 1);
+            int msg_id = esp_mqtt_client_subscribe(mqtt_client, MQTT_TOPIC_RELAY_CONTROL, 1);
             ESP_LOGI(MQTT_TAG, "Subscribed to relay control topic, msg_id=%d", msg_id);
             
-            msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_COMMANDS, 1);
+            msg_id = esp_mqtt_client_subscribe(mqtt_client, MQTT_TOPIC_COMMANDS, 1);
             ESP_LOGI(MQTT_TAG, "Subscribed to commands topic, msg_id=%d", msg_id);
             
             // Publish initial status

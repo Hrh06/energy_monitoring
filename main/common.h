@@ -52,7 +52,7 @@
 
 // WiFi Configuration
 #define MAX_STA_CONN 4
-#define HOTSPOT_SSID "ESP32_Energy_Meter"
+#define HOTSPOT_SSID "BitMinds_Energy_Meter"
 #define HOTSPOT_PASS "energy123"
 #define PROVISIONING_TIMEOUT_MS 300000
 
@@ -194,6 +194,7 @@ void restore_relay_states_from_nvs(void);
 
 // WiFi Manager functions
 esp_err_t wifi_manager_init(void);
+void provision_monitor_task(void *pvParameters);
 void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 void start_provisioning_mode(void);
 void stop_provisioning_mode(void);

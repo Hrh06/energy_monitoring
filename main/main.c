@@ -73,7 +73,7 @@ static esp_err_t init_tasks(void)
     
     // High-priority sampling task on Core 1
     BaseType_t result = xTaskCreatePinnedToCore(
-        sampling_task, "sampling_task", 4096, NULL, 5, &sampling_task_handle, 1);
+        sampling_task, "sampling_task", 6144, NULL, 5, &sampling_task_handle, 1);
     if (result != pdPASS) {
         ESP_LOGE(MAIN_TAG, "Failed to create sampling task");
         return ESP_FAIL;
@@ -81,7 +81,7 @@ static esp_err_t init_tasks(void)
     
     // Processing task on Core 0
     result = xTaskCreatePinnedToCore(
-        processing_task, "processing_task", 8192, NULL, 4, &processing_task_handle, 0);
+        processing_task, "processing_task", 10240, NULL, 4, &processing_task_handle, 0);
     if (result != pdPASS) {
         ESP_LOGE(MAIN_TAG, "Failed to create processing task");
         return ESP_FAIL;
@@ -89,7 +89,7 @@ static esp_err_t init_tasks(void)
     
     // Communication task on Core 0
     result = xTaskCreatePinnedToCore(
-        communication_task, "communication_task", 8192, NULL, 3, &communication_task_handle, 0);
+        communication_task, "communication_task", 10240, NULL, 3, &communication_task_handle, 0);
     if (result != pdPASS) {
         ESP_LOGE(MAIN_TAG, "Failed to create communication task");
         return ESP_FAIL;
@@ -97,7 +97,7 @@ static esp_err_t init_tasks(void)
     
     // Button task on Core 0
     result = xTaskCreatePinnedToCore(
-        button_task, "button_task", 2048, NULL, 2, &button_task_handle, 0);
+        button_task, "button_task", 3072, NULL, 2, &button_task_handle, 0);
     if (result != pdPASS) {
         ESP_LOGE(MAIN_TAG, "Failed to create button task");
         return ESP_FAIL;
@@ -186,5 +186,21 @@ void app_main(void)
                  current_realtime_data.current_rms,
                  current_realtime_data.power_real,
                  active_relays);
+    }
+}
+
+void debug_task_stacks(void)
+{
+    if (sampling_task_handle) {
+        ESP_LOGI("DEBUG", "Sampling task high water mark: %d", uxTaskGetStackHighWaterMark(sampling_task_handle));
+    }
+    if (processing_task_handle) {
+        ESP_LOGI("DEBUG", "Processing task high water mark: %d", uxTaskGetStackHighWaterMark(processing_task_handle));
+    }
+    if (communication_task_handle) {
+        ESP_LOGI("DEBUG", "Communication task high water mark: %d", uxTaskGetStackHighWaterMark(communication_task_handle));
+    }
+    if (button_task_handle) {
+        ESP_LOGI("DEBUG", "Button task high water mark: %d", uxTaskGetStackHighWaterMark(button_task_handle));
     }
 }

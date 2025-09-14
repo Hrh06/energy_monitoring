@@ -3,8 +3,8 @@
 # Name,   Type, SubType, Offset,  Size, Flags
 nvs,      data, nvs,     0x9000,  0x6000,
 phy_init, data, phy,     0xf000,  0x1000,
-factory,  app,  factory, 0x10000, 0x1A0000,
-wifi_config, data, nvs,  0x1B0000, 0x6000,
-relay_control, data, nvs, 0x1B6000, 0x6000,
-certificates, data, nvs, 0x1BC000, 0x6000,
-storage,  data, fat,     0x1C2000, 0x3E000,
+factory,  app,  factory, 0x10000, 0x180000,
+wifi_config, data, nvs,  0x190000, 0x6000,
+relay_control, data, nvs, 0x196000, 0x6000,
+certificates, data, nvs, 0x19C000, 0x6000,
+storage,  data, fat,     0x1A2000, 0x5E000,

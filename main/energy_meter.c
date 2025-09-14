@@ -137,7 +137,16 @@ void sampling_task(void *pvParameters)
     ESP_LOGI(ENERGY_TAG, "Sampling task started on Core 1");
     
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xPeriod = pdMS_TO_TICKS(1000 / (SYSTEM_FREQUENCY * SAMPLES_PER_CYCLE)); // ~100μs for 50Hz
+    const int64_t period_us = 1000000 / (SYSTEM_FREQUENCY * SAMPLES_PER_CYCLE);
+    TickType_t xPeriod = pdMS_TO_TICKS(period_us / 1000); // ~100μs for 50Hz
+    
+    // CRITICAL: Ensure period is at least 1 tick to avoid assertion failure
+    if (xPeriod == 0) {
+        xPeriod = 1; // Minimum 1 tick (about 1ms on most ESP32 configs)
+        ESP_LOGW(ENERGY_TAG, "Sampling period too small, using minimum 1 tick");
+    }
+    
+    ESP_LOGI(ENERGY_TAG, "Sampling period: %d ticks (%.2f ms)", xPeriod, (double)pdTICKS_TO_MS(xPeriod));
     
     cycle_data_t cycle_data = {0};
     int sample_index = 0;

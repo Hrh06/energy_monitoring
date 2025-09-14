@@ -4,6 +4,78 @@
 
 static const char* WIFI_TAG = "WIFI_MANAGER";
 
+// Add static variables for provisioning control
+static bool provision_exit_requested = false;
+static TaskHandle_t provision_monitor_task_handle = NULL;
+
+void provision_monitor_task(void *pvParameters)
+{
+    ESP_LOGI(WIFI_TAG, "Provisioning monitor task started - Press button 5s to exit");
+    
+    bool button_pressed = false;
+    TickType_t press_start_time = 0;
+    TickType_t last_check_time = 0;
+    int led_blink_counter = 0;
+    
+    while (provisioning_mode && !provision_exit_requested) {
+        TickType_t current_time = xTaskGetTickCount();
+        
+        // Debounced button checking every 50ms
+        if (current_time - last_check_time >= pdMS_TO_TICKS(BUTTON_DEBOUNCE_MS)) {
+            int button_state = gpio_get_level(RESET_BUTTON_PIN);
+            
+            if (button_state == 0 && !button_pressed) { // Button pressed (active low)
+                button_pressed = true;
+                press_start_time = current_time;
+                ESP_LOGI(WIFI_TAG, "Provisioning exit button pressed");
+            } else if (button_state == 1 && button_pressed) { // Button released
+                button_pressed = false;
+                TickType_t press_duration = current_time - press_start_time;
+                TickType_t press_duration_ms = pdTICKS_TO_MS(press_duration);
+                
+                ESP_LOGI(WIFI_TAG, "Button released after %u ms", press_duration_ms);
+                
+                // Check for 3-second press to exit provisioning
+                if (press_duration_ms >= WIFI_RESET_HOLD_TIME_MS) {
+                    ESP_LOGI(WIFI_TAG, "3-second button press detected - Exiting provisioning mode");
+                    provision_exit_requested = true;
+                    break;
+                }
+            }
+            
+            // Check for continuous 3-second press
+            if (button_pressed && (current_time - press_start_time) >= pdMS_TO_TICKS(WIFI_RESET_HOLD_TIME_MS)) {
+                ESP_LOGI(WIFI_TAG, "3-second button hold detected - Exiting provisioning mode");
+                
+                // Blink LED rapidly to indicate exit
+                for (int i = 0; i < 10; i++) {
+                    gpio_set_level(STATUS_LED_PIN, 1);
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    gpio_set_level(STATUS_LED_PIN, 0);
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                }
+                
+                provision_exit_requested = true;
+                break;
+            }
+            
+            last_check_time = current_time;
+        }
+        
+        // Provisioning mode LED pattern - fast blink every 500ms
+        if (++led_blink_counter >= 10) { // 10 * 50ms = 500ms
+            gpio_set_level(STATUS_LED_PIN, !gpio_get_level(STATUS_LED_PIN));
+            led_blink_counter = 0;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(50)); // 50ms loop
+    }
+    
+    ESP_LOGI(WIFI_TAG, "Provisioning monitor task exiting");
+    provision_monitor_task_handle = NULL;
+    vTaskDelete(NULL);
+}
+
 // ==================== WIFI INITIALIZATION ====================
 
 esp_err_t wifi_manager_init(void)
@@ -182,13 +254,19 @@ void start_provisioning_mode(void)
     
     ESP_LOGI(WIFI_TAG, "Starting WiFi provisioning mode...");
     provisioning_mode = true;
+    provision_exit_requested = false;
     
     // Stop current WiFi mode
     esp_wifi_stop();
     esp_wifi_deinit();
     
+    esp_netif_t* ap_netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    if (ap_netif) {
+        esp_netif_destroy(ap_netif);
+    }
+    
     // Reinitialize WiFi for AP mode
-    esp_netif_create_default_wifi_ap();
+   ap_netif = esp_netif_create_default_wifi_ap();
     
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -201,47 +279,89 @@ void start_provisioning_mode(void)
             .password = HOTSPOT_PASS,
             .max_connection = MAX_STA_CONN,
             .authmode = WIFI_AUTH_WPA2_PSK,
-            .channel = 1,
+            .channel = 6,
+            .beacon_interval = 100,
         },
     };
-    
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
     
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
     // Fallback to HTTP server
     httpd_config_t conf = HTTPD_DEFAULT_CONFIG();
     conf.server_port = 80;  // Use HTTP port 80
     conf.max_uri_handlers = 8;
-    conf.stack_size = 6144;
+    conf.stack_size = 8192;
     conf.task_priority = tskIDLE_PRIORITY + 5;
+    conf.max_open_sockets = 7;
+    conf.max_resp_headers = 8;
     
     if (httpd_start(&server, &conf) == ESP_OK) {
         ESP_LOGI(WIFI_TAG, "HTTP server started on http://192.168.4.1");
+
+        // Register URI handlers
+        httpd_uri_t root_uri = {
+            .uri = "/",
+            .method = HTTP_GET,
+            .handler = root_handler,
+            .user_ctx = NULL
+        };
+        
+        httpd_uri_t save_uri = {
+            .uri = "/save",
+            .method = HTTP_POST,
+            .handler = wifi_credentials_handler,
+            .user_ctx = NULL
+        };
+        
+        httpd_register_uri_handler(server, &root_uri);
+        httpd_register_uri_handler(server, &save_uri);
+        
+        ESP_LOGI(WIFI_TAG, "WiFi access point started");
+        ESP_LOGI(WIFI_TAG, "HTTP server started on http://192.168.4.1");
+        ESP_LOGI(WIFI_TAG, "Provisioning mode active - Connect to '%s' and visit 192.168.4.1", HOTSPOT_SSID);
+    
+        // Start provisioning monitor task
+        BaseType_t result = xTaskCreatePinnedToCore(
+            provision_monitor_task, 
+            "provision_monitor", 
+            3072, 
+            NULL, 
+            2, 
+            &provision_monitor_task_handle, 
+            0
+        );
+
+        if (result != pdPASS) {
+            ESP_LOGE(WIFI_TAG, "Failed to create provisioning monitor task");
+        }
+
+        // Stay in provisioning mode loop until exit requested
+        while (provisioning_mode && !provision_exit_requested) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            
+            // Periodic status log every 30 seconds
+            static int status_counter = 0;
+            if (++status_counter >= 30) {
+                ESP_LOGI(WIFI_TAG, "Provisioning mode active - Waiting for WiFi configuration or button press");
+                status_counter = 0;
+            }
+        }
+        
+        // Exit provisioning mode
+        if (provision_exit_requested) {
+            ESP_LOGI(WIFI_TAG, "Provisioning exit requested - Restarting in normal mode");
+            stop_provisioning_mode();
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            esp_restart();
+        }
     } else {
         ESP_LOGE(WIFI_TAG, "Failed to start web server");
         return;
     }
-    
-    // Register URI handlers
-    httpd_uri_t root_uri = {
-        .uri = "/",
-        .method = HTTP_GET,
-        .handler = root_handler,
-        .user_ctx = NULL
-    };
-    
-    httpd_uri_t save_uri = {
-        .uri = "/save",
-        .method = HTTP_POST,
-        .handler = wifi_credentials_handler,
-        .user_ctx = NULL
-    };
-    
-    httpd_register_uri_handler(server, &root_uri);
-    httpd_register_uri_handler(server, &save_uri);
-    
-    ESP_LOGI(WIFI_TAG, "Provisioning mode active - Connect to '%s' and visit 192.168.4.1", HOTSPOT_SSID);
 }
 
 void stop_provisioning_mode(void)
@@ -252,13 +372,23 @@ void stop_provisioning_mode(void)
     
     ESP_LOGI(WIFI_TAG, "Stopping provisioning mode...");
     provisioning_mode = false;
+    provision_exit_requested = true;
     
+    // Stop monitor task
+    if (provision_monitor_task_handle) {
+        vTaskDelete(provision_monitor_task_handle);
+        provision_monitor_task_handle = NULL;
+    }
+
     // Stop web server
     if (server) {
         httpd_stop(server);
         server = NULL;
     }
     
+    // Turn off LED
+    gpio_set_level(STATUS_LED_PIN, 0);
+
     // Note: We don't stop WiFi here as we're switching to STA mode
     ESP_LOGI(WIFI_TAG, "Provisioning mode stopped");
 }
@@ -408,7 +538,7 @@ esp_err_t wifi_credentials_handler(httpd_req_t *req)
             
             // Restart after a delay to allow response to be sent
             vTaskDelay(pdMS_TO_TICKS(3000));
-            esp_restart();
+            provision_exit_requested = true;
             
             return ESP_OK;
         }
