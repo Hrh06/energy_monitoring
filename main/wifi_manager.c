@@ -35,7 +35,7 @@ void provision_monitor_task(void *pvParameters)
                 
                 ESP_LOGI(WIFI_TAG, "Button released after %u ms", press_duration_ms);
                 
-                // Check for 3-second press to exit provisioning
+                // Check for 5-second press to exit provisioning
                 if (press_duration_ms >= WIFI_RESET_HOLD_TIME_MS) {
                     ESP_LOGI(WIFI_TAG, "3-second button press detected - Exiting provisioning mode");
                     provision_exit_requested = true;
@@ -339,7 +339,7 @@ void start_provisioning_mode(void)
             ESP_LOGE(WIFI_TAG, "Failed to create provisioning monitor task");
         }
 
-        // Stay in provisioning mode loop until exit requested
+        // ADDED: Stay in provisioning mode loop until exit requested
         while (provisioning_mode && !provision_exit_requested) {
             vTaskDelay(pdMS_TO_TICKS(1000));
             
@@ -372,23 +372,13 @@ void stop_provisioning_mode(void)
     
     ESP_LOGI(WIFI_TAG, "Stopping provisioning mode...");
     provisioning_mode = false;
-    provision_exit_requested = true;
     
-    // Stop monitor task
-    if (provision_monitor_task_handle) {
-        vTaskDelete(provision_monitor_task_handle);
-        provision_monitor_task_handle = NULL;
-    }
-
     // Stop web server
     if (server) {
         httpd_stop(server);
         server = NULL;
     }
     
-    // Turn off LED
-    gpio_set_level(STATUS_LED_PIN, 0);
-
     // Note: We don't stop WiFi here as we're switching to STA mode
     ESP_LOGI(WIFI_TAG, "Provisioning mode stopped");
 }
@@ -538,7 +528,7 @@ esp_err_t wifi_credentials_handler(httpd_req_t *req)
             
             // Restart after a delay to allow response to be sent
             vTaskDelay(pdMS_TO_TICKS(3000));
-            provision_exit_requested = true;
+            esp_restart();
             
             return ESP_OK;
         }

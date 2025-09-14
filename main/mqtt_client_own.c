@@ -25,7 +25,7 @@ esp_err_t mqtt_client_init(void)
         .refresh_connection_after_ms = 20000,
         .buffer_size = 4096,
         .out_buffer_size = 4096,
-        .transport = MQTT_TRANSPORT_OVER_SSL,
+        .transport = MQTT_TRANSPORT_OVER_SSL
     };
     
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
