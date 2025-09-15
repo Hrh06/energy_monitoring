@@ -5,6 +5,31 @@
 
 static const char* ENERGY_TAG = "ENERGY_METER";
 
+// Button interrupt handling variables
+static volatile bool button_interrupt_flag = false;
+static volatile int64_t button_press_start_time = 0;
+static volatile int64_t button_release_time = 0;
+static volatile bool button_currently_pressed = false;
+
+// Button interrupt handler (IRAM_ATTR for fast execution)
+static void IRAM_ATTR button_interrupt_handler(void* arg)
+{
+    int64_t current_time = esp_timer_get_time();
+    int button_state = gpio_get_level(RESET_BUTTON_PIN);
+    
+    if (button_state == 0 && !button_currently_pressed) {
+        // Button pressed (falling edge)
+        button_currently_pressed = true;
+        button_press_start_time = current_time;
+        button_interrupt_flag = true;
+    } else if (button_state == 1 && button_currently_pressed) {
+        // Button released (rising edge)
+        button_currently_pressed = false;
+        button_release_time = current_time;
+        button_interrupt_flag = true;
+    }
+}
+
 // ==================== ENERGY METER INITIALIZATION ====================
 
 esp_err_t energy_meter_init(void)
@@ -104,6 +129,20 @@ esp_err_t energy_meter_init(void)
         return ret;
     }
     
+    // Install GPIO interrupt handler with HIGH PRIORITY
+    ret = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_IRAM);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(ENERGY_TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Add interrupt handler for button
+    ret = gpio_isr_handler_add(RESET_BUTTON_PIN, button_interrupt_handler, NULL);
+    if (ret != ESP_OK) {
+        ESP_LOGE(ENERGY_TAG, "Failed to add GPIO ISR handler: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
     // Initialize real-time data structure
     memset(&current_realtime_data, 0, sizeof(realtime_data_t));
     current_realtime_data.timestamp = esp_timer_get_time();
@@ -368,33 +407,24 @@ void button_task(void *pvParameters)
 {
     ESP_LOGI(ENERGY_TAG, "Button task started on Core 0 - 3s=WiFi reset, 7s=Hotspot mode");
     
-    bool button_pressed = false;
-    TickType_t press_start_time = 0;
-    TickType_t last_check_time = 0;
     int led_counter = 0;
     
     while (1) {
-        TickType_t current_time = xTaskGetTickCount();
         
         // Debounced button checking
-        if (current_time - last_check_time >= pdMS_TO_TICKS(BUTTON_DEBOUNCE_MS)) {
-            int button_state = gpio_get_level(RESET_BUTTON_PIN);
+        if (button_interrupt_flag) {
+            button_interrupt_flag = false;
             
-            if (button_state == 0 && !button_pressed) { // Button pressed (active low)
-                button_pressed = true;
-                press_start_time = current_time;
-                ESP_LOGI(ENERGY_TAG, "Reset button pressed");
-            } else if (button_state == 1 && button_pressed) { // Button released
-                button_pressed = false;
-                TickType_t press_duration = current_time - press_start_time;
-                TickType_t press_duration_ms = pdTICKS_TO_MS(press_duration);
-                
+            if (!button_currently_pressed && button_release_time > button_press_start_time) { // Button pressed (active low)
+                int64_t press_duration_us = button_release_time - button_press_start_time;
+                int32_t press_duration_ms = press_duration_us / 1000;
+
                 ESP_LOGI(ENERGY_TAG, "Reset button released after %u ms", press_duration_ms);
-                
-                // Check for 3-second WiFi reset
+
+                //check for 3-second WiFi reset
                 if (press_duration_ms >= WIFI_RESET_HOLD_TIME_MS && press_duration_ms < HOTSPOT_HOLD_TIME_MS) {
                     ESP_LOGI(ENERGY_TAG, "3-second WiFi reset triggered");
-                    
+
                     // Blink LED 6 times to indicate WiFi reset
                     for (int i = 0; i < 6; i++) {
                         gpio_set_level(STATUS_LED_PIN, 1);
@@ -402,33 +432,32 @@ void button_task(void *pvParameters)
                         gpio_set_level(STATUS_LED_PIN, 0);
                         vTaskDelay(pdMS_TO_TICKS(100));
                     }
-                    
+
                     // Clear WiFi credentials and restart
                     clear_wifi_credentials();
                     vTaskDelay(pdMS_TO_TICKS(1000));
                     esp_restart();
                 }
-            }
-            
-            // Check for 7-second hotspot mode
-            if (button_pressed && (current_time - press_start_time) >= pdMS_TO_TICKS(HOTSPOT_HOLD_TIME_MS)) {
-                ESP_LOGI(ENERGY_TAG, "7-second hotspot mode triggered");
+
+                else if (press_duration_ms >= HOTSPOT_HOLD_TIME_MS) {
+                    ESP_LOGI(ENERGY_TAG, "7-Second hotspot mode triggered");
                 
-                // Blink LED 10 times to indicate hotspot mode
-                for (int i = 0; i < 10; i++) {
-                    gpio_set_level(STATUS_LED_PIN, 1);
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                    gpio_set_level(STATUS_LED_PIN, 0);
-                    vTaskDelay(pdMS_TO_TICKS(100));
+                    // Blink LED 6 times to indicate wifi reset
+                    for (int i = 0; i < 10; i++) {
+                        gpio_set_level(STATUS_LED_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                        gpio_set_level(STATUS_LED_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                    }
+
+                    // Clear WiFi credentials and restart restart
+                    clear_wifi_credentials();
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();
                 }
-                
-                // Clear WiFi credentials and restart into hotspot mode
-                clear_wifi_credentials();
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                esp_restart();
+            } else if (button_currently_pressed) {
+                ESP_LOGI(ENERGY_TAG, "Reset button pressed - monitoring for hold duration");
             }
-            
-            last_check_time = current_time;
         }
         
         // Status LED management

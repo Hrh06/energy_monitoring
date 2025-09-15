@@ -33,6 +33,9 @@ TaskHandle_t processing_task_handle = NULL;
 TaskHandle_t communication_task_handle = NULL;
 TaskHandle_t button_task_handle = NULL;
 
+// MQTT initialization flag
+bool mqtt_initialized = false;
+
 // ==================== SYSTEM INITIALIZATION ====================
 
 static const char* MAIN_TAG = "MAIN";
@@ -73,7 +76,7 @@ static esp_err_t init_tasks(void)
     
     // High-priority sampling task on Core 1
     BaseType_t result = xTaskCreatePinnedToCore(
-        sampling_task, "sampling_task", 6144, NULL, 5, &sampling_task_handle, 1);
+        sampling_task, "sampling_task", 4096, NULL, 5, &sampling_task_handle, 1);
     if (result != pdPASS) {
         ESP_LOGE(MAIN_TAG, "Failed to create sampling task");
         return ESP_FAIL;
@@ -81,7 +84,7 @@ static esp_err_t init_tasks(void)
     
     // Processing task on Core 0
     result = xTaskCreatePinnedToCore(
-        processing_task, "processing_task", 10240, NULL, 4, &processing_task_handle, 0);
+        processing_task, "processing_task", 8192, NULL, 4, &processing_task_handle, 0);
     if (result != pdPASS) {
         ESP_LOGE(MAIN_TAG, "Failed to create processing task");
         return ESP_FAIL;
@@ -89,7 +92,7 @@ static esp_err_t init_tasks(void)
     
     // Communication task on Core 0
     result = xTaskCreatePinnedToCore(
-        communication_task, "communication_task", 10240, NULL, 3, &communication_task_handle, 0);
+        communication_task, "communication_task", 8192, NULL, 3, &communication_task_handle, 0);
     if (result != pdPASS) {
         ESP_LOGE(MAIN_TAG, "Failed to create communication task");
         return ESP_FAIL;
@@ -97,13 +100,39 @@ static esp_err_t init_tasks(void)
     
     // Button task on Core 0
     result = xTaskCreatePinnedToCore(
-        button_task, "button_task", 3072, NULL, 2, &button_task_handle, 0);
+        button_task, "button_task", 2048, NULL, 6, &button_task_handle, 0);
     if (result != pdPASS) {
         ESP_LOGE(MAIN_TAG, "Failed to create button task");
         return ESP_FAIL;
     }
     
     ESP_LOGI(MAIN_TAG, "All application tasks created successfully");
+    return ESP_OK;
+}
+
+// ==================== MQTT INITIALIZATION AFTER WIFI ====================
+
+esp_err_t initialize_mqtt_after_wifi_connection(void)
+{
+    if (mqtt_initialized) {
+        ESP_LOGW(MAIN_TAG, "MQTT already initialized");
+        return ESP_OK;
+    }
+    
+    ESP_LOGI(MAIN_TAG, "WiFi connected - Initializing MQTT client...");
+    
+    esp_err_t err = mqtt_client_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(MAIN_TAG, "MQTT client initialization failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    mqtt_initialized = true;
+    ESP_LOGI(MAIN_TAG, "MQTT client initialized successfully");
+    
+    // Now start the MQTT client
+    mqtt_client_start();
+    
     return ESP_OK;
 }
 
@@ -147,12 +176,6 @@ void app_main(void)
         esp_restart();
     }
     
-    err = mqtt_client_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(MAIN_TAG, "MQTT client init failed: %s", esp_err_to_name(err));
-        esp_restart();
-    }
-    
     // Create application tasks
     err = init_tasks();
     if (err != ESP_OK) {
@@ -174,7 +197,7 @@ void app_main(void)
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(10000)); // 10 second status updates
         
-        bool ssl_active = verify_mqtt_connection_security();
+        bool ssl_active = mqtt_initialized ? verify_mqtt_connection_security() : false;
         uint8_t relay_mask = get_relay_mask();
         int active_relays = __builtin_popcount(relay_mask);
         

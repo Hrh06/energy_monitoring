@@ -194,10 +194,13 @@ void restore_relay_states_from_nvs(void);
 
 // WiFi Manager functions
 esp_err_t wifi_manager_init(void);
+esp_err_t wifi_connect(const char* ssid, const char* password);
 void provision_monitor_task(void *pvParameters);
 void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 void start_provisioning_mode(void);
 void stop_provisioning_mode(void);
+bool wifi_is_connected(void);
+bool wifi_get_ip_address(char* ip_str);
 esp_err_t root_handler(httpd_req_t *req);
 esp_err_t wifi_credentials_handler(httpd_req_t *req);
 
@@ -205,12 +208,15 @@ esp_err_t wifi_credentials_handler(httpd_req_t *req);
 esp_err_t mqtt_client_init(void);
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
 void mqtt_client_start(void);
+void mqtt_client_stop(void);
 void publish_sensor_data(complete_data_packet_t *packet);
 void publish_relay_status(void);
 void publish_realtime_data(void);
 void publish_system_status(void);
 void handle_mqtt_relay_command(const char* command_data, int data_len);
 bool verify_mqtt_connection_security(void);
+bool mqtt_is_connected(void);
+void mqtt_get_stats(void* stats);
 
 // Relay Control functions
 esp_err_t relay_control_init(void);
@@ -219,14 +225,38 @@ void set_relay_state(int relay_num, bool state);
 void set_all_relays(uint8_t relay_mask);
 void toggle_relay(int relay_num);
 uint8_t get_relay_mask(void);
+bool get_relay_state(int relay_num);
 void handle_power_failure_relays(void);
 void process_automatic_relay_control(complete_data_packet_t *packet);
+void set_relay_auto_params(int relay_num, bool auto_enabled, 
+                          float voltage_high, float voltage_low,
+                          float current_high, float current_low);
+void set_relay_mode(int relay_num, bool manual_mode);
+void get_relay_stats(int relay_num, void* stats);
 
 // Energy Meter functions
 esp_err_t energy_meter_init(void);
+void energy_meter_deinit(void);
 void sampling_task(void *pvParameters);
 void processing_task(void *pvParameters);
 void communication_task(void *pvParameters);
 void button_task(void *pvParameters);
+
+// Energy calculation functions
+float calculate_rms(const float* samples, int count);
+float calculate_real_power(const float* voltage_samples, const float* current_samples, int count);
+float calculate_apparent_power(float voltage_rms, float current_rms);
+float calculate_reactive_power(float apparent_power, float real_power);
+float calculate_power_factor(float real_power, float apparent_power);
+
+// Utility functions
+uint32_t calibrate_adc_reading(uint32_t raw_adc, adc1_channel_t channel);
+float convert_adc_to_measurement(uint32_t adc_mv, int sensor_type);
+bool parse_solar_data(const char* data_buffer, solar_data_t* solar_data);
+void update_realtime_data(float voltage_rms, float current_rms, float power_real,
+                         float power_apparent, float power_factor, float frequency,
+                         bool sensor_connected);
+bool is_sensor_connected(int channel_num);
+void get_energy_meter_stats(void* stats);
 
 #endif // COMMON_H

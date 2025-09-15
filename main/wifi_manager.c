@@ -4,77 +4,11 @@
 
 static const char* WIFI_TAG = "WIFI_MANAGER";
 
+extern esp_err_t initialize_mqtt_after_wifi_connection(void);
+
 // Add static variables for provisioning control
 static bool provision_exit_requested = false;
 static TaskHandle_t provision_monitor_task_handle = NULL;
-
-void provision_monitor_task(void *pvParameters)
-{
-    ESP_LOGI(WIFI_TAG, "Provisioning monitor task started - Press button 5s to exit");
-    
-    bool button_pressed = false;
-    TickType_t press_start_time = 0;
-    TickType_t last_check_time = 0;
-    int led_blink_counter = 0;
-    
-    while (provisioning_mode && !provision_exit_requested) {
-        TickType_t current_time = xTaskGetTickCount();
-        
-        // Debounced button checking every 50ms
-        if (current_time - last_check_time >= pdMS_TO_TICKS(BUTTON_DEBOUNCE_MS)) {
-            int button_state = gpio_get_level(RESET_BUTTON_PIN);
-            
-            if (button_state == 0 && !button_pressed) { // Button pressed (active low)
-                button_pressed = true;
-                press_start_time = current_time;
-                ESP_LOGI(WIFI_TAG, "Provisioning exit button pressed");
-            } else if (button_state == 1 && button_pressed) { // Button released
-                button_pressed = false;
-                TickType_t press_duration = current_time - press_start_time;
-                TickType_t press_duration_ms = pdTICKS_TO_MS(press_duration);
-                
-                ESP_LOGI(WIFI_TAG, "Button released after %u ms", press_duration_ms);
-                
-                // Check for 5-second press to exit provisioning
-                if (press_duration_ms >= WIFI_RESET_HOLD_TIME_MS) {
-                    ESP_LOGI(WIFI_TAG, "3-second button press detected - Exiting provisioning mode");
-                    provision_exit_requested = true;
-                    break;
-                }
-            }
-            
-            // Check for continuous 3-second press
-            if (button_pressed && (current_time - press_start_time) >= pdMS_TO_TICKS(WIFI_RESET_HOLD_TIME_MS)) {
-                ESP_LOGI(WIFI_TAG, "3-second button hold detected - Exiting provisioning mode");
-                
-                // Blink LED rapidly to indicate exit
-                for (int i = 0; i < 10; i++) {
-                    gpio_set_level(STATUS_LED_PIN, 1);
-                    vTaskDelay(pdMS_TO_TICKS(50));
-                    gpio_set_level(STATUS_LED_PIN, 0);
-                    vTaskDelay(pdMS_TO_TICKS(50));
-                }
-                
-                provision_exit_requested = true;
-                break;
-            }
-            
-            last_check_time = current_time;
-        }
-        
-        // Provisioning mode LED pattern - fast blink every 500ms
-        if (++led_blink_counter >= 10) { // 10 * 50ms = 500ms
-            gpio_set_level(STATUS_LED_PIN, !gpio_get_level(STATUS_LED_PIN));
-            led_blink_counter = 0;
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(50)); // 50ms loop
-    }
-    
-    ESP_LOGI(WIFI_TAG, "Provisioning monitor task exiting");
-    provision_monitor_task_handle = NULL;
-    vTaskDelete(NULL);
-}
 
 // ==================== WIFI INITIALIZATION ====================
 
@@ -158,7 +92,10 @@ void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id
                     mqtt_connected = false;
                     
                     // Stop MQTT client
-                    if (mqtt_client) {
+                    extern esp_mqtt_client_handle_t mqtt_client;
+                    extern bool mqtt_initialized;
+                    if (mqtt_client && mqtt_initialized) {
+                        ESP_LOGI(WIFI_TAG, "Stopping MQTT client due to WiFi disconnection");
                         esp_mqtt_client_stop(mqtt_client);
                     }
                     
@@ -168,6 +105,7 @@ void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id
                     
                     // Try to reconnect
                     ESP_LOGI(WIFI_TAG, "Attempting to reconnect...");
+                    vTaskDelay(pdMS_TO_TICKS(5000));
                     esp_wifi_connect();
                 }
                 break;
@@ -210,8 +148,13 @@ void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id
                 stop_provisioning_mode();
             }
             
-            // Start MQTT client
-            mqtt_client_start();
+            // Initialize and start MQTT client AFTER WiFi is connected
+            ESP_LOGI(WIFI_TAG, "WiFi connection established - initializing MQTT...");
+            esp_err_t mqtt_init_result = initialize_mqtt_after_wifi_connection();
+            if (mqtt_init_result != ESP_OK) {
+                ESP_LOGE(WIFI_TAG, "Failed to initialize MQTT after WiFi connection: %s", 
+                         esp_err_to_name(mqtt_init_result));
+            }
         }
     }
 }
@@ -266,7 +209,7 @@ void start_provisioning_mode(void)
     }
     
     // Reinitialize WiFi for AP mode
-   ap_netif = esp_netif_create_default_wifi_ap();
+    ap_netif = esp_netif_create_default_wifi_ap();
     
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -390,7 +333,7 @@ esp_err_t root_handler(httpd_req_t *req)
     const char* html_page = 
         "<!DOCTYPE html>"
         "<html><head>"
-        "<title>ESP32 Energy Meter - WiFi Setup</title>"
+        "<title>BitMinds Energy Meter - WiFi Setup</title>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<style>"
         "body{font-family:Arial;margin:0;padding:20px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);}"
@@ -408,26 +351,26 @@ esp_err_t root_handler(httpd_req_t *req)
         "</style>"
         "</head><body>"
         "<div class='container'>"
-        "<h1>⚡ Energy Meter WiFi Setup</h1>"
+        "<h1>Energy Meter WiFi Setup</h1>"
         "<div class='info'>"
-        "<h3>🔧 Device Information</h3>"
+        "<h3>Device Information</h3>"
         "<p>ESP32 Multi-Core Energy Meter v2.1</p>"
         "<p>8-Channel monitoring + 8-Relay control</p>"
         "<p>SSL/TLS encrypted MQTT communication</p>"
         "</div>"
         "<form method='post' action='/save'>"
         "<div class='form-group'>"
-        "<label for='ssid'>📶 WiFi Network Name (SSID)</label>"
+        "<label for='ssid'>WiFi Network Name (SSID)</label>"
         "<input type='text' id='ssid' name='ssid' required maxlength='31' placeholder='Enter your WiFi network name'>"
         "</div>"
         "<div class='form-group'>"
-        "<label for='password'>🔒 WiFi Password</label>"
+        "<label for='password'>WiFi Password</label>"
         "<input type='password' id='password' name='password' required maxlength='63' placeholder='Enter your WiFi password'>"
         "</div>"
-        "<button type='submit'>💾 Save & Connect</button>"
+        "<button type='submit'>Save & Connect</button>"
         "</form>"
         "<div class='info' style='margin-top:20px;'>"
-        "<h3>🛡️ Security Features</h3>"
+        "<h3>Security Features</h3>"
         "<p>• All data transmission uses SSL/TLS encryption</p>"
         "<p>• Credentials stored securely in device memory</p>"
         "<p>• Real-time monitoring with 1-second updates</p>"
@@ -514,7 +457,7 @@ esp_err_t wifi_credentials_handler(httpd_req_t *req)
                 ".success{color:#155724;background:#d4edda;padding:15px;border-radius:8px;margin:20px 0;}"
                 "</style></head><body>"
                 "<div class='container'>"
-                "<h1>✅ Configuration Saved!</h1>"
+                "<h1>Configuration Saved!</h1>"
                 "<div class='success'>"
                 "<p><strong>WiFi credentials have been saved successfully.</strong></p>"
                 "<p>The device will now restart and connect to your network.</p>"
@@ -537,4 +480,72 @@ esp_err_t wifi_credentials_handler(httpd_req_t *req)
     ESP_LOGE(WIFI_TAG, "Invalid WiFi credentials received");
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid credentials");
     return ESP_FAIL;
+}
+
+void provision_monitor_task(void *pvParameters)
+{
+    ESP_LOGI(WIFI_TAG, "Provisioning monitor task started - Press button 5s to exit");
+    
+    bool button_pressed = false;
+    TickType_t press_start_time = 0;
+    TickType_t last_check_time = 0;
+    int led_blink_counter = 0;
+    
+    while (provisioning_mode && !provision_exit_requested) {
+        TickType_t current_time = xTaskGetTickCount();
+        
+        // Debounced button checking every 50ms
+        if (current_time - last_check_time >= pdMS_TO_TICKS(BUTTON_DEBOUNCE_MS)) {
+            int button_state = gpio_get_level(RESET_BUTTON_PIN);
+            
+            if (button_state == 0 && !button_pressed) { // Button pressed (active low)
+                button_pressed = true;
+                press_start_time = current_time;
+                ESP_LOGI(WIFI_TAG, "Provisioning exit button pressed");
+            } else if (button_state == 1 && button_pressed) { // Button released
+                button_pressed = false;
+                TickType_t press_duration = current_time - press_start_time;
+                TickType_t press_duration_ms = pdTICKS_TO_MS(press_duration);
+                
+                ESP_LOGI(WIFI_TAG, "Button released after %u ms", press_duration_ms);
+                
+                // Check for 3-second press to exit provisioning
+                if (press_duration_ms >= WIFI_RESET_HOLD_TIME_MS) {
+                    ESP_LOGI(WIFI_TAG, "3-second button press detected - Exiting provisioning mode");
+                    provision_exit_requested = true;
+                    break;
+                }
+            }
+            
+            // Check for continuous 3-second press
+            if (button_pressed && (current_time - press_start_time) >= pdMS_TO_TICKS(WIFI_RESET_HOLD_TIME_MS)) {
+                ESP_LOGI(WIFI_TAG, "3-second button hold detected - Exiting provisioning mode");
+                
+                // Blink LED rapidly to indicate exit
+                for (int i = 0; i < 10; i++) {
+                    gpio_set_level(STATUS_LED_PIN, 1);
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    gpio_set_level(STATUS_LED_PIN, 0);
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                }
+                
+                provision_exit_requested = true;
+                break;
+            }
+            
+            last_check_time = current_time;
+        }
+        
+        // Provisioning mode LED pattern - fast blink every 500ms
+        if (++led_blink_counter >= 10) { // 10 * 50ms = 500ms
+            gpio_set_level(STATUS_LED_PIN, !gpio_get_level(STATUS_LED_PIN));
+            led_blink_counter = 0;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(50)); // 50ms loop
+    }
+    
+    ESP_LOGI(WIFI_TAG, "Provisioning monitor task exiting");
+    provision_monitor_task_handle = NULL;
+    vTaskDelete(NULL);
 }
