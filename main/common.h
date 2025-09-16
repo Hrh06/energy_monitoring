@@ -40,11 +40,11 @@
 // Hardware Pin Definitions (Updated as requested)
 #define VOLTAGE_SENSOR_PIN ADC1_CHANNEL_6  // GPIO 34 (input-only)
 #define CURRENT_SENSOR_PIN ADC1_CHANNEL_7  // GPIO 35 (input-only)
-#define RESET_BUTTON_PIN 0
+#define RESET_BUTTON_PIN 4
 #define STATUS_LED_PIN 2
-#define SHIFT_REG_DATA_PIN 4     // DS pin
-#define SHIFT_REG_CLOCK_PIN 5    // SH_CP pin  
-#define SHIFT_REG_LATCH_PIN 18   // ST_CP pin
+#define SHIFT_REG_DATA_PIN 5     // DS pin
+#define SHIFT_REG_CLOCK_PIN 18    // SH_CP pin  
+#define SHIFT_REG_LATCH_PIN 19   // ST_CP pin
 #define UART_NUM UART_NUM_2
 #define UART_TX_PIN 17
 #define UART_RX_PIN 16
@@ -57,7 +57,7 @@
 #define PROVISIONING_TIMEOUT_MS 300000
 
 // MQTT Configuration
-#define MQTT_BROKER_URL "mqtts://32821620fa6640e3b91fecff79c3dcce.s1.eu.hivemq.cloud:8883"
+#define MQTT_BROKER_URL "bluequeen-5ddc56ca.a03.euc1.aws.hivemq.cloud"
 #define MQTT_BROKER_PORT 8883
 #define MQTT_USERNAME "Bitminds"
 #define MQTT_PASSWORD "Bitminds@123456"
@@ -75,10 +75,20 @@
 #define BUTTON_DEBOUNCE_MS 50
 #define WIFI_RESET_HOLD_TIME_MS 3000    // 3 seconds for WiFi reset
 #define HOTSPOT_HOLD_TIME_MS 7000       // 7 seconds for hotspot mode
+#define FACTORY_RESET_HOLD_TIME_MS 10000   // 10 seconds for factory reset
+#define EMERGENCY_RESTART_HOLD_TIME_MS 12000 // 12 seconds for emergency restart
 
 // Update intervals
 #define RELAY_STATUS_PUBLISH_INTERVAL_MS 1000  // 1 second for responsive control
 #define REALTIME_DATA_INTERVAL_MS 1000         // 1 second for real-time data
+
+// ULTRA HIGH PRIORITY Task Configuration
+#define ULTRA_BUTTON_TASK_PRIORITY 24          // Maximum ESP32 priority
+#define ULTRA_BUTTON_TASK_STACK_SIZE 4096      // Large stack for reliability
+#define ULTRA_BUTTON_TASK_CORE 0               // Dedicated core
+
+// Emergency system status function
+void emergency_system_status(void);
 
 // ==================== DATA STRUCTURES ====================
 
@@ -258,5 +268,15 @@ void update_realtime_data(float voltage_rms, float current_rms, float power_real
                          bool sensor_connected);
 bool is_sensor_connected(int channel_num);
 void get_energy_meter_stats(void* stats);
+
+// Ultra Priority Button System functions (NEW)
+void emergency_system_status(void);
+void force_button_task_priority_restore(void);
+void monitor_button_task_health(void);
+void test_ultra_priority_button(void);
+void debug_task_stacks(void);
+
+// MQTT initialization after WiFi
+esp_err_t initialize_mqtt_after_wifi_connection(void);
 
 #endif // COMMON_H

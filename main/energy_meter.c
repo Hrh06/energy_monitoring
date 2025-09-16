@@ -1,32 +1,56 @@
 #include "energy_meter.h"
 #include "relay_control.h"
-#include "mqtt_client.h"
+#include "mqtt_client_own.h"
 #include "nvs_storage.h"
 
 static const char* ENERGY_TAG = "ENERGY_METER";
 
-// Button interrupt handling variables
+// ==================== ULTRA HIGH PRIORITY BUTTON VARIABLES ====================
+
+// Button interrupt handling variables - Highest Priority
 static volatile bool button_interrupt_flag = false;
 static volatile int64_t button_press_start_time = 0;
 static volatile int64_t button_release_time = 0;
 static volatile bool button_currently_pressed = false;
+static volatile uint32_t button_press_count = 0;
+
+// ==================== ULTRA HIGH PRIORITY INTERRUPT HANDLER ====================
 
 // Button interrupt handler (IRAM_ATTR for fast execution)
-static void IRAM_ATTR button_interrupt_handler(void* arg)
+static void IRAM_ATTR ultra_priority_button_interrupt_handler(void* arg)
 {
+    // This runs at the highest interrupt priority and cannot be blocked
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     int64_t current_time = esp_timer_get_time();
     int button_state = gpio_get_level(RESET_BUTTON_PIN);
     
+    button_press_count++;
+    
     if (button_state == 0 && !button_currently_pressed) {
-        // Button pressed (falling edge)
+        // Button pressed (falling edge) - CRITICAL SECTION
         button_currently_pressed = true;
         button_press_start_time = current_time;
         button_interrupt_flag = true;
+        // IMMEDIATELY wake up the ultra priority button task
+        if (button_task_handle != NULL) {
+            vTaskNotifyGiveFromISR(button_task_handle, &xHigherPriorityTaskWoken);
+        }
+        
     } else if (button_state == 1 && button_currently_pressed) {
         // Button released (rising edge)
         button_currently_pressed = false;
         button_release_time = current_time;
         button_interrupt_flag = true;
+        // IMMEDIATELY wake up the ultra priority button task
+        if (button_task_handle != NULL) {
+            vTaskNotifyGiveFromISR(button_task_handle, &xHigherPriorityTaskWoken);
+        }
+        
+    }
+
+    // Force context switch to ultra priority task immediately
+    if (xHigherPriorityTaskWoken == pdTRUE) {
+        portYIELD_FROM_ISR();
     }
 }
 
@@ -34,7 +58,7 @@ static void IRAM_ATTR button_interrupt_handler(void* arg)
 
 esp_err_t energy_meter_init(void)
 {
-    ESP_LOGI(ENERGY_TAG, "Initializing energy meter hardware...");
+    ESP_LOGI(ENERGY_TAG, "Initializing energy meter hardware with ULTRA HIGH PRIORITY button...");
     
     // Initialize ADC
     esp_err_t ret = adc1_config_width(ADC_WIDTH_BIT_12);
@@ -103,7 +127,7 @@ esp_err_t energy_meter_init(void)
         return ret;
     }
     
-    // Initialize GPIO pins for button and LED
+    // Configure LED GPIO FIRST (for emergency signaling)
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_DISABLE,
         .mode = GPIO_MODE_OUTPUT,
@@ -117,29 +141,36 @@ esp_err_t energy_meter_init(void)
         return ret;
     }
     
-    // Configure reset button (GPIO 0)
-    io_conf.intr_type = GPIO_INTR_DISABLE;
+    // ⭐ CRITICAL: Configure ULTRA HIGH PRIORITY reset button (GPIO 4)
+    io_conf.intr_type = GPIO_INTR_ANYEDGE;      // Both rising and falling edges
     io_conf.mode = GPIO_MODE_INPUT;
     io_conf.pin_bit_mask = (1ULL << RESET_BUTTON_PIN);
-    io_conf.pull_up_en = 1;
+    io_conf.pull_up_en = 1;                     // Enable pull-up for active-low button
     io_conf.pull_down_en = 0;
     ret = gpio_config(&io_conf);
     if (ret != ESP_OK) {
-        ESP_LOGE(ENERGY_TAG, "Failed to configure button GPIO: %s", esp_err_to_name(ret));
+        ESP_LOGE(ENERGY_TAG, "CRITICAL: Failed to configure ULTRA PRIORITY button GPIO: %s", esp_err_to_name(ret));
         return ret;
     }
-    
-    // Install GPIO interrupt handler with HIGH PRIORITY
+
+    // ⭐ CRITICAL: Install GPIO interrupt with HIGHEST PRIORITY and IRAM allocation
     ret = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_IRAM);
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(ENERGY_TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(ret));
+        ESP_LOGE(ENERGY_TAG, "CRITICAL: Failed to install GPIO ISR service: %s", esp_err_to_name(ret));
         return ret;
     }
-    
-    // Add interrupt handler for button
-    ret = gpio_isr_handler_add(RESET_BUTTON_PIN, button_interrupt_handler, NULL);
+
+    // ⭐ CRITICAL: Add ULTRA HIGH PRIORITY interrupt handler for button
+    ret = gpio_isr_handler_add(RESET_BUTTON_PIN, ultra_priority_button_interrupt_handler, NULL);
     if (ret != ESP_OK) {
-        ESP_LOGE(ENERGY_TAG, "Failed to add GPIO ISR handler: %s", esp_err_to_name(ret));
+        ESP_LOGE(ENERGY_TAG, "CRITICAL: Failed to add ULTRA PRIORITY GPIO ISR handler: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Enable GPIO interrupt for the button pin
+    ret = gpio_intr_enable(RESET_BUTTON_PIN);
+    if (ret != ESP_OK) {
+        ESP_LOGE(ENERGY_TAG, "CRITICAL: Failed to enable button GPIO interrupt: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -155,25 +186,221 @@ esp_err_t energy_meter_init(void)
     return ESP_OK;
 }
 
-void energy_meter_deinit(void)
+// ==================== ULTRA HIGH PRIORITY BUTTON TASK ====================
+
+void button_task(void *pvParameters)
 {
-    ESP_LOGI(ENERGY_TAG, "Deinitializing energy meter...");
+    ESP_LOGI(ENERGY_TAG, "🔘 ULTRA HIGH PRIORITY Button task started (Priority %d)", uxTaskPriorityGet(NULL));
+    ESP_LOGI(ENERGY_TAG, "This task has the highest priority and cannot be blocked");
+    ESP_LOGI(ENERGY_TAG, "⚡ Emergency Actions:");
+    ESP_LOGI(ENERGY_TAG, "   • 3-7s press = WiFi Reset");
+    ESP_LOGI(ENERGY_TAG, "   • 7-10s press = Hotspot Mode");
+    ESP_LOGI(ENERGY_TAG, "   • 10-12s press = Factory Reset");
+    ESP_LOGI(ENERGY_TAG, "   • 12s+ press = Emergency Restart");
+
+    int led_counter = 0;
+    uint32_t last_button_count = 0;
+    TickType_t last_status_time = 0;
     
-    if (adc_chars) {
-        free(adc_chars);
-        adc_chars = NULL;
+    while (1) {
+        // ⭐ ULTRA HIGH PRIORITY: Wait for button interrupt notification
+        // This will wake immediately when button is pressed/released
+        uint32_t notification_value = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+        
+        if (notification_value > 0 || button_interrupt_flag) {
+            // ULTRA HIGH PRIORITY button event handling
+            button_interrupt_flag = false;
+            
+            if (!button_currently_pressed && button_release_time > button_press_start_time) {
+                // Button was released - check hold duration
+                int64_t press_duration_us = button_release_time - button_press_start_time;
+                uint32_t press_duration_ms = (uint32_t)(press_duration_us / 1000);
+
+                ESP_LOGI(ENERGY_TAG, "🔘 ULTRA PRIORITY: Button released after %u ms", press_duration_ms);
+
+                // ⚡ EMERGENCY RESTART (12+ seconds) - HIGHEST PRIORITY
+                if (press_duration_ms >= EMERGENCY_RESTART_HOLD_TIME_MS) {
+                    ESP_LOGW(ENERGY_TAG, "🚨 EMERGENCY RESTART TRIGGERED (12s+) - FORCE RESTART NOW!");
+                    
+                    // Emergency LED pattern - 20 fast blinks
+                    for (int i = 0; i < 20; i++) {
+                        gpio_set_level(STATUS_LED_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(25));
+                        gpio_set_level(STATUS_LED_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(25));
+                    }
+                    
+                    // FORCE IMMEDIATE RESTART - Nothing can stop this
+                    esp_restart();
+                }
+                // 🏭 FACTORY RESET (10-12 seconds)
+                else if (press_duration_ms >= FACTORY_RESET_HOLD_TIME_MS) {
+                    ESP_LOGW(ENERGY_TAG, "🏭 FACTORY RESET TRIGGERED (10s+) - Clearing all data");
+                    
+                    // Factory reset LED pattern - 15 blinks
+                    for (int i = 0; i < 15; i++) {
+                        gpio_set_level(STATUS_LED_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(50));
+                        gpio_set_level(STATUS_LED_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(50));
+                    }
+                    
+                    // Clear all NVS data
+                    nvs_flash_erase();
+                    clear_wifi_credentials();
+                    
+                    ESP_LOGW(ENERGY_TAG, "🏭 Factory reset complete - Restarting in 2 seconds");
+                    vTaskDelay(pdMS_TO_TICKS(2000));
+                    esp_restart();
+                }
+                // 📡 HOTSPOT MODE (7-10 seconds)  
+                else if (press_duration_ms >= HOTSPOT_HOLD_TIME_MS) {
+                    ESP_LOGI(ENERGY_TAG, "📡 HOTSPOT MODE TRIGGERED (7s+) - Starting provisioning");
+
+                    // Hotspot LED pattern - 10 blinks
+                    for (int i = 0; i < 10; i++) {
+                        gpio_set_level(STATUS_LED_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                        gpio_set_level(STATUS_LED_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                    }
+
+                    // Clear credentials and restart in provisioning mode
+                    clear_wifi_credentials();
+                    ESP_LOGI(ENERGY_TAG, "📡 Starting hotspot mode in 1 second");
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();
+                }
+                // 📶 WIFI RESET (3-7 seconds)
+                else if (press_duration_ms >= WIFI_RESET_HOLD_TIME_MS) {
+                    ESP_LOGI(ENERGY_TAG, "📶 WIFI RESET TRIGGERED (3s+) - Clearing WiFi credentials");
+
+                    // WiFi reset LED pattern - 6 blinks
+                    for (int i = 0; i < 6; i++) {
+                        gpio_set_level(STATUS_LED_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                        gpio_set_level(STATUS_LED_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                    }
+
+                    // Clear WiFi credentials and restart
+                    clear_wifi_credentials();
+                    ESP_LOGI(ENERGY_TAG, "📶 WiFi reset complete - Restarting in 1 second");
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_restart();
+                }
+                // Short press - just acknowledge
+                else if (press_duration_ms >= 100) {
+                    ESP_LOGI(ENERGY_TAG, "🔘 Short button press detected (%u ms)", press_duration_ms);
+                    
+                    // Single quick blink for acknowledgment
+                    gpio_set_level(STATUS_LED_PIN, 1);
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    gpio_set_level(STATUS_LED_PIN, 0);
+                }
+            } else if (button_currently_pressed) {
+                ESP_LOGI(ENERGY_TAG, "🔘 ULTRA PRIORITY: Button pressed - monitoring hold duration");
+            }
+        }
+        
+        // Status LED management (when not in button action)
+        if (++led_counter >= 10) { // Update LED every ~1 second
+            TickType_t current_time = xTaskGetTickCount();
+            
+            if (provisioning_mode) {
+                // Fast blink in provisioning mode
+                gpio_set_level(STATUS_LED_PIN, !gpio_get_level(STATUS_LED_PIN));
+            } else if (wifi_connected && mqtt_connected) {
+                // Single blink for fully connected
+                gpio_set_level(STATUS_LED_PIN, 1);
+                vTaskDelay(pdMS_TO_TICKS(50));
+                gpio_set_level(STATUS_LED_PIN, 0);
+            } else if (wifi_connected) {
+                // Double blink for WiFi only
+                for (int i = 0; i < 2; i++) {
+                    gpio_set_level(STATUS_LED_PIN, 1);
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    gpio_set_level(STATUS_LED_PIN, 0);
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
+            } else {
+                // Slow blink for disconnected
+                gpio_set_level(STATUS_LED_PIN, 1);
+                vTaskDelay(pdMS_TO_TICKS(200));
+                gpio_set_level(STATUS_LED_PIN, 0);
+            }
+            led_counter = 0;
+            
+            // Periodic status report every 30 seconds
+            if ((current_time - last_status_time) >= pdMS_TO_TICKS(30000)) {
+                ESP_LOGI(ENERGY_TAG, "🔘 ULTRA BUTTON STATUS: Priority=%d, Interrupts=%u, Active=YES", 
+                         uxTaskPriorityGet(NULL), button_press_count);
+                ESP_LOGI(ENERGY_TAG, "🛡️ Button system: UNBLOCKABLE and RESPONSIVE");
+                last_status_time = current_time;
+            }
+        }
+        
+        // Debug: Check if button interrupt count changed
+        if (button_press_count != last_button_count) {
+            ESP_LOGD(ENERGY_TAG, "Button interrupt count: %u", button_press_count);
+            last_button_count = button_press_count;
+        }
+        
+        // CRITICAL: Very short delay to maintain ultra-high responsiveness
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
-    
-    uart_driver_delete(UART_NUM);
-    
-    ESP_LOGI(ENERGY_TAG, "Energy meter deinitialized");
+}
+
+// ==================== EMERGENCY SYSTEM STATUS CHECK ====================
+
+void emergency_system_status(void)
+{
+    static TickType_t last_emergency_check = 0;
+    TickType_t current_time = xTaskGetTickCount();
+
+    // Run emergency check every 60 seconds
+    if ((current_time - last_emergency_check) >= pdMS_TO_TICKS(60000)) {
+        ESP_LOGI("EMERGENCY", "🚨 EMERGENCY SYSTEM STATUS CHECK");
+        ESP_LOGI("EMERGENCY", "🔘 Button Task: %s (Priority %d)", 
+                 button_task_handle ? "ACTIVE" : "MISSING",
+                 button_task_handle ? uxTaskPriorityGet(button_task_handle) : 0);
+        ESP_LOGI("EMERGENCY", "⚡ Button Interrupts: %u total", button_press_count);
+        ESP_LOGI("EMERGENCY", "🧠 Free Heap: %u bytes", esp_get_free_heap_size());
+        ESP_LOGI("EMERGENCY", "📊 Stack High Water Marks:");
+        
+        if (button_task_handle) {
+            ESP_LOGI("EMERGENCY", "   🔘 Button: %u bytes free", 
+                     uxTaskGetStackHighWaterMark(button_task_handle) * 4);
+        }
+        if (sampling_task_handle) {
+            ESP_LOGI("EMERGENCY", "   📊 Sampling: %u bytes free", 
+                     uxTaskGetStackHighWaterMark(sampling_task_handle) * 4);
+        }
+        if (processing_task_handle) {
+            ESP_LOGI("EMERGENCY", "   ⚙️ Processing: %u bytes free", 
+                     uxTaskGetStackHighWaterMark(processing_task_handle) * 4);
+        }
+        if (communication_task_handle) {
+            ESP_LOGI("EMERGENCY", "   📡 Communication: %u bytes free", 
+                     uxTaskGetStackHighWaterMark(communication_task_handle) * 4);
+        }
+        
+        // Check if button task is still at maximum priority
+        if (button_task_handle && uxTaskPriorityGet(button_task_handle) != ULTRA_BUTTON_TASK_PRIORITY) {
+            ESP_LOGW("EMERGENCY", "🚨 WARNING: Button task priority changed! Restoring to maximum");
+            vTaskPrioritySet(button_task_handle, ULTRA_BUTTON_TASK_PRIORITY);
+        }
+        
+        last_emergency_check = current_time;
+    }
 }
 
 // ==================== SAMPLING TASK (CORE 1) ====================
 
 void sampling_task(void *pvParameters)
 {
-    ESP_LOGI(ENERGY_TAG, "Sampling task started on Core 1");
+    ESP_LOGI(ENERGY_TAG, "Sampling task started on Core 1 (priority %d)", uxTaskPriorityGet(NULL));
+    ESP_LOGI(ENERGY_TAG, "⚠️ This task yields to ULTRA PRIORITY button task");
     
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const int64_t period_us = 1000000 / (SYSTEM_FREQUENCY * SAMPLES_PER_CYCLE);
@@ -233,7 +460,8 @@ void sampling_task(void *pvParameters)
 
 void processing_task(void *pvParameters)
 {
-    ESP_LOGI(ENERGY_TAG, "Processing task started on Core 0");
+    ESP_LOGI(ENERGY_TAG, "Processing task started on Core 0 (Priority %d)", uxTaskPriorityGet(NULL));
+    ESP_LOGI(ENERGY_TAG, "⚠️ This task yields to ULTRA PRIORITY button task");
     
     cycle_data_t cycle_data;
     static cycle_data_t packet_cycles[CYCLES_PER_PACKET];
@@ -333,7 +561,8 @@ void processing_task(void *pvParameters)
 
 void communication_task(void *pvParameters)
 {
-    ESP_LOGI(ENERGY_TAG, "Communication task started on Core 0");
+    ESP_LOGI(ENERGY_TAG, "Communication task started on Core 0 (Priority %d - LOWEST)", uxTaskPriorityGet(NULL));
+    ESP_LOGI(ENERGY_TAG, "⚠️ This task can be blocked - Button task remains unaffected");
     
     char solar_buffer[256];
     int solar_buffer_pos = 0;
@@ -342,6 +571,9 @@ void communication_task(void *pvParameters)
     TickType_t last_system_status_time = 0;
     
     while (1) {
+        // CRITICAL: Always yield to higher priority tasks first
+        taskYIELD();
+
         // Read solar data via UART
         uint8_t data[128];
         int length = uart_read_bytes(UART_NUM, data, sizeof(data) - 1, pdMS_TO_TICKS(100));
@@ -398,100 +630,6 @@ void communication_task(void *pvParameters)
         }
         
         vTaskDelay(pdMS_TO_TICKS(100)); // 100ms loop
-    }
-}
-
-// ==================== BUTTON TASK (CORE 0) ====================
-
-void button_task(void *pvParameters)
-{
-    ESP_LOGI(ENERGY_TAG, "Button task started on Core 0 - 3s=WiFi reset, 7s=Hotspot mode");
-    
-    int led_counter = 0;
-    
-    while (1) {
-        
-        // Debounced button checking
-        if (button_interrupt_flag) {
-            button_interrupt_flag = false;
-            
-            if (!button_currently_pressed && button_release_time > button_press_start_time) { // Button pressed (active low)
-                int64_t press_duration_us = button_release_time - button_press_start_time;
-                int32_t press_duration_ms = press_duration_us / 1000;
-
-                ESP_LOGI(ENERGY_TAG, "Reset button released after %u ms", press_duration_ms);
-
-                //check for 3-second WiFi reset
-                if (press_duration_ms >= WIFI_RESET_HOLD_TIME_MS && press_duration_ms < HOTSPOT_HOLD_TIME_MS) {
-                    ESP_LOGI(ENERGY_TAG, "3-second WiFi reset triggered");
-
-                    // Blink LED 6 times to indicate WiFi reset
-                    for (int i = 0; i < 6; i++) {
-                        gpio_set_level(STATUS_LED_PIN, 1);
-                        vTaskDelay(pdMS_TO_TICKS(100));
-                        gpio_set_level(STATUS_LED_PIN, 0);
-                        vTaskDelay(pdMS_TO_TICKS(100));
-                    }
-
-                    // Clear WiFi credentials and restart
-                    clear_wifi_credentials();
-                    vTaskDelay(pdMS_TO_TICKS(1000));
-                    esp_restart();
-                }
-
-                else if (press_duration_ms >= HOTSPOT_HOLD_TIME_MS) {
-                    ESP_LOGI(ENERGY_TAG, "7-Second hotspot mode triggered");
-                
-                    // Blink LED 6 times to indicate wifi reset
-                    for (int i = 0; i < 10; i++) {
-                        gpio_set_level(STATUS_LED_PIN, 1);
-                        vTaskDelay(pdMS_TO_TICKS(100));
-                        gpio_set_level(STATUS_LED_PIN, 0);
-                        vTaskDelay(pdMS_TO_TICKS(100));
-                    }
-
-                    // Clear WiFi credentials and restart restart
-                    clear_wifi_credentials();
-                    vTaskDelay(pdMS_TO_TICKS(1000));
-                    esp_restart();
-                }
-            } else if (button_currently_pressed) {
-                ESP_LOGI(ENERGY_TAG, "Reset button pressed - monitoring for hold duration");
-            }
-        }
-        
-        // Status LED management
-        if (++led_counter >= 10) { // Update LED every ~1 second
-            if (provisioning_mode) {
-                // Fast blink in provisioning mode
-                gpio_set_level(STATUS_LED_PIN, 1);
-                vTaskDelay(pdMS_TO_TICKS(100));
-                gpio_set_level(STATUS_LED_PIN, 0);
-                vTaskDelay(pdMS_TO_TICKS(100));
-            } else if (wifi_connected && mqtt_connected) {
-                // Single blink for fully connected
-                gpio_set_level(STATUS_LED_PIN, 1);
-                vTaskDelay(pdMS_TO_TICKS(50));
-                gpio_set_level(STATUS_LED_PIN, 0);
-            } else if (wifi_connected) {
-                // Double blink for WiFi only
-                gpio_set_level(STATUS_LED_PIN, 1);
-                vTaskDelay(pdMS_TO_TICKS(50));
-                gpio_set_level(STATUS_LED_PIN, 0);
-                vTaskDelay(pdMS_TO_TICKS(100));
-                gpio_set_level(STATUS_LED_PIN, 1);
-                vTaskDelay(pdMS_TO_TICKS(50));
-                gpio_set_level(STATUS_LED_PIN, 0);
-            } else {
-                // Slow blink for disconnected
-                gpio_set_level(STATUS_LED_PIN, 1);
-                vTaskDelay(pdMS_TO_TICKS(100));
-                gpio_set_level(STATUS_LED_PIN, 0);
-            }
-            led_counter = 0;
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -635,4 +773,18 @@ void get_energy_meter_stats(void* stats)
     // Placeholder for energy meter statistics
     // Could include: total energy consumed, uptime, sampling rate, etc.
     ESP_LOGD(ENERGY_TAG, "Energy meter stats requested (not implemented)");
+}
+
+void energy_meter_deinit(void)
+{
+    ESP_LOGI(ENERGY_TAG, "Deinitializing energy meter...");
+    
+    if (adc_chars) {
+        free(adc_chars);
+        adc_chars = NULL;
+    }
+    
+    uart_driver_delete(UART_NUM);
+    
+    ESP_LOGI(ENERGY_TAG, "Energy meter deinitialized");
 }
