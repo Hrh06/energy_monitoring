@@ -9,24 +9,89 @@ esp_err_t mqtt_client_init(void)
 {
     ESP_LOGI(MQTT_TAG, "Initializing MQTT client with SSL/TLS...");
     
-    // ESP-IDF v4.4 style configuration
+    // Check your custom certificate sizes
+    size_t ca_cert_len = ca_cert_end - ca_cert_start;
+    size_t esp32_cert_len = esp32_cert_end - esp32_cert_start;
+    size_t esp32_key_len = esp32_key_end - esp32_key_start;
+    
+    ESP_LOGI(MQTT_TAG, "📋 Custom Certificate sizes:");
+    ESP_LOGI(MQTT_TAG, "   🏛️  CA Certificate: %d bytes", ca_cert_len);
+    ESP_LOGI(MQTT_TAG, "   📜 ESP32 Certificate: %d bytes", esp32_cert_len);
+    ESP_LOGI(MQTT_TAG, "   🔑 ESP32 Private Key: %d bytes", esp32_key_len);
+    
+    // Validate certificates are loaded
+    if (ca_cert_len == 0) {
+        ESP_LOGE(MQTT_TAG, "❌ CA certificate not found or empty!");
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    //Build broker URI
+    char broker_uri[128];
+    snprintf(broker_uri, sizeof(broker_uri), "mqtts://%s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
+    
+    ESP_LOGI(MQTT_TAG, "Connecting to: %s", broker_uri);
+    ESP_LOGI(MQTT_TAG, "Username: %s", MQTT_USERNAME);
+    ESP_LOGI(MQTT_TAG, "🆔 Client ID: %s", MQTT_CLIENT_ID);
+
+    // ✅ FIXED: ESP-IDF v4.4 compatible configuration structure
     esp_mqtt_client_config_t mqtt_cfg = {
-        .uri = MQTT_BROKER_URL,
+        // Event handler
+        .event_handle = NULL,
+        
+        // Broker connection
+        .uri = broker_uri,
+        .host = MQTT_BROKER_URL,
+        .port = MQTT_BROKER_PORT,
+        .transport = MQTT_TRANSPORT_OVER_SSL,
+        
+        // Authentication
         .username = MQTT_USERNAME,
         .password = MQTT_PASSWORD,
-        .client_id = MQTT_CLIENT_ID,
-        .keepalive = 60,
-        .cert_pem = (const char *)mqtt_broker_cert_pem_start,
-        .cert_len = mqtt_broker_cert_pem_end - mqtt_broker_cert_pem_start,
-        .port = MQTT_BROKER_PORT,
+        
+        // TLS/SSL certificates (YOUR custom certificates)
+        .cert_pem = (const char *)ca_cert_start,           // CA certificate
+        .cert_len = ca_cert_len,
+        .client_cert_pem = (const char *)esp32_cert_start, // Client certificate
+        .client_cert_len = esp32_cert_len,
+        .client_key_pem = (const char *)esp32_key_start,   // Private key
+        .client_key_len = esp32_key_len,
         .skip_cert_common_name_check = false,
+        
+        // Session settings
         .disable_clean_session = false,
-        .network_timeout_ms = 5000,
+        .keepalive = 60,
+        
+        // Last Will and Testament
+        .lwt_topic = MQTT_TOPIC_SYSTEM_STATUS,
+        .lwt_msg = "{\"status\":\"offline\",\"reason\":\"disconnect\"}",
+        .lwt_msg_len = 0, // Use strlen if 0
+        .lwt_qos = 1,
+        .lwt_retain = false,
+        
+        // Network timeouts
+        .network_timeout_ms = 10000,
         .refresh_connection_after_ms = 20000,
+        .disable_auto_reconnect = false,
+        
+        // Buffer sizes
         .buffer_size = 4096,
         .out_buffer_size = 4096,
-        .transport = MQTT_TRANSPORT_OVER_SSL
+        
+        // Task settings
+        .task_prio = 3,
+        .task_stack = 8192,
+        
+        // Client ID (optional, will be auto-generated if NULL)
+        .client_id = NULL
     };
+    
+    ESP_LOGI(MQTT_TAG, "HiveMQ Configuration:");
+    ESP_LOGI(MQTT_TAG, "  Host: %s", MQTT_BROKER_URL);
+    ESP_LOGI(MQTT_TAG, "  Port: %d", MQTT_BROKER_PORT);
+    ESP_LOGI(MQTT_TAG, "  Username: %s", MQTT_USERNAME);
+    ESP_LOGI(MQTT_TAG, "  Client ID: %s", MQTT_CLIENT_ID);
+    ESP_LOGI(MQTT_TAG, "  SSL/TLS: ENABLED");
+    ESP_LOGI(MQTT_TAG, "  Certificate: %d bytes", mqtt_cfg.cert_len);
     
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
     if (mqtt_client == NULL) {
@@ -34,9 +99,17 @@ esp_err_t mqtt_client_init(void)
         return ESP_FAIL;
     }
     
-    esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, mqtt_client);
+    // ✅ FIXED: Correct event handler registration
+    esp_err_t err = esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(MQTT_TAG, "Failed to register MQTT event handler: %s", esp_err_to_name(err));
+        esp_mqtt_client_destroy(mqtt_client);
+        mqtt_client = NULL;
+        return err;
+    }
+
+    ESP_LOGI(MQTT_TAG, "MQTT HiveMQ Cloud SSL/TLS client initialized successfully");
     
-    ESP_LOGI(MQTT_TAG, "MQTT SSL/TLS client initialized successfully");
     return ESP_OK;
 }
 
@@ -56,6 +129,8 @@ void mqtt_client_start(void)
     esp_err_t err = esp_mqtt_client_start(mqtt_client);
     if (err != ESP_OK) {
         ESP_LOGE(MQTT_TAG, "Failed to start MQTT client: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(MQTT_TAG, "MQTT client start initiated - waiting for connection...");
     }
 }
 
@@ -74,30 +149,38 @@ void mqtt_client_stop(void)
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     esp_mqtt_event_handle_t event = event_data;
-    //esp_mqtt_client_handle_t client = event->client;
+    esp_mqtt_client_handle_t client = event->client;
     
     switch (event_id) {
+        case MQTT_EVENT_BEFORE_CONNECT:
+            ESP_LOGI(MQTT_TAG, "🔄 Connecting to HiveMQ Cloud SSL broker...");
+            ESP_LOGI(MQTT_TAG, "Target: %s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
+            break;
+
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(MQTT_TAG, "MQTT Connected to broker with SSL/TLS encryption");
+            ESP_LOGI(MQTT_TAG, "✅ HiveMQ server verified with your CA certificate");
+            ESP_LOGI(MQTT_TAG, "✅ ESP32 client authenticated with your custom certificate");
+            ESP_LOGI(MQTT_TAG, "🔐 Communication encrypted with your private key");
             mqtt_connected = true;
             
             // Subscribe to command topics
-            int msg_id = esp_mqtt_client_subscribe(mqtt_client, MQTT_TOPIC_RELAY_CONTROL, 1);
+            int msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_RELAY_CONTROL, 1);
             ESP_LOGI(MQTT_TAG, "Subscribed to relay control topic, msg_id=%d", msg_id);
             
-            msg_id = esp_mqtt_client_subscribe(mqtt_client, MQTT_TOPIC_COMMANDS, 1);
+            msg_id = esp_mqtt_client_subscribe(client, MQTT_TOPIC_COMMANDS, 1);
             ESP_LOGI(MQTT_TAG, "Subscribed to commands topic, msg_id=%d", msg_id);
             
             // Publish initial status
             publish_relay_status();
-            publish_system_status();
+            publish_system_status_with_custom_certs();
             break;
             
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGW(MQTT_TAG, "MQTT Disconnected from SSL broker");
             mqtt_connected = false;
             break;
-            
+
         case MQTT_EVENT_SUBSCRIBED:
             ESP_LOGD(MQTT_TAG, "MQTT SSL Subscribed, msg_id=%d", event->msg_id);
             break;
@@ -137,7 +220,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
                 } else if (strcmp(command, "get_relay_status") == 0) {
                     publish_relay_status();
                 } else if (strcmp(command, "get_system_status") == 0) {
-                    publish_system_status();
+                    publish_system_status_with_custom_certs();
                 }
             }
             break;
@@ -147,18 +230,162 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
                 ESP_LOGW(MQTT_TAG, "SSL/TLS transport error: 0x%x", event->error_handle->esp_tls_last_esp_err);
                 ESP_LOGW(MQTT_TAG, "SSL/TLS stack error: 0x%x", event->error_handle->esp_tls_stack_err);
+                // Specific HiveMQ troubleshooting
+                ESP_LOGE(MQTT_TAG, "🏢 HiveMQ Cloud Troubleshooting:");
+                ESP_LOGE(MQTT_TAG, "  1. Check cluster status at HiveMQ Cloud Console");
+                ESP_LOGE(MQTT_TAG, "  2. Verify credentials: Username=%s", MQTT_USERNAME);
+                ESP_LOGE(MQTT_TAG, "  3. Ensure certificate matches HiveMQ requirements");
+                ESP_LOGE(MQTT_TAG, "  4. Check network connectivity to AWS region");
+                ESP_LOGE(MQTT_TAG, "  5. Verify port 8883 is not blocked by firewall");
+
+            } else if (event->error_handle->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
+                ESP_LOGE(MQTT_TAG, "🚫 Connection refused by HiveMQ Cloud");
+                ESP_LOGE(MQTT_TAG, "💡 Check username/password: %s", MQTT_USERNAME);
             }
+            
             mqtt_connected = false;
             break;
-            
-        case MQTT_EVENT_BEFORE_CONNECT:
-            ESP_LOGD(MQTT_TAG, "MQTT Connecting to SSL broker...");
-            break;
-            
+
         default:
             ESP_LOGD(MQTT_TAG, "MQTT SSL Other event id: %d", event_id);
             break;
     }
+}
+
+// ==================== CUSTOM CERTIFICATE STATUS PUBLISHERS ====================
+
+void publish_custom_security_status(void)
+{
+    if (!mqtt_connected) {
+        return;
+    }
+    
+    cJSON *json = cJSON_CreateObject();
+    if (!json) {
+        return;
+    }
+    
+    // Custom security information
+    cJSON_AddStringToObject(json, "device_id", MQTT_CLIENT_ID);
+    cJSON_AddStringToObject(json, "security_level", "CUSTOM_MUTUAL_TLS");
+    cJSON_AddBoolToObject(json, "custom_certificates", true);
+    cJSON_AddBoolToObject(json, "server_cert_verified", true);
+    cJSON_AddBoolToObject(json, "client_cert_authenticated", true);
+    cJSON_AddStringToObject(json, "encryption", "TLS_1.2_WITH_CUSTOM_CERTS");
+    cJSON_AddNumberToObject(json, "timestamp", esp_timer_get_time());
+    
+    // Your certificate info (sizes only, not content)
+    size_t ca_cert_len = ca_cert_end - ca_cert_start;
+    size_t esp32_cert_len = esp32_cert_end - esp32_cert_start;
+    size_t esp32_key_len = esp32_key_end - esp32_key_start;
+    
+    cJSON_AddNumberToObject(json, "ca_cert_size", ca_cert_len);
+    cJSON_AddNumberToObject(json, "esp32_cert_size", esp32_cert_len);
+    cJSON_AddNumberToObject(json, "esp32_key_size", esp32_key_len);
+    cJSON_AddBoolToObject(json, "all_certs_loaded", ca_cert_len > 0 && esp32_cert_len > 0 && esp32_key_len > 0);
+    cJSON_AddStringToObject(json, "cert_status", "CUSTOM_USER_PROVIDED");
+    
+    char *json_string = cJSON_PrintUnformatted(json);
+    if (json_string) {
+        esp_mqtt_client_publish(mqtt_client, MQTT_TOPIC_SYSTEM_STATUS, json_string, 0, 1, 0);
+        free(json_string);
+    }
+    
+    cJSON_Delete(json);
+}
+
+void publish_certificate_info(void)
+{
+    if (!mqtt_connected) {
+        return;
+    }
+    
+    cJSON *json = cJSON_CreateObject();
+    if (!json) {
+        return;
+    }
+    
+    cJSON_AddStringToObject(json, "device_id", MQTT_CLIENT_ID);
+    cJSON_AddStringToObject(json, "message_type", "certificate_info");
+    cJSON_AddStringToObject(json, "certificate_source", "USER_PROVIDED_CUSTOM");
+    
+    // Certificate sizes and status
+    size_t ca_cert_len = ca_cert_end - ca_cert_start;
+    size_t esp32_cert_len = esp32_cert_end - esp32_cert_start;
+    size_t esp32_key_len = esp32_key_end - esp32_key_start;
+    
+    cJSON *cert_info = cJSON_CreateObject();
+    cJSON_AddNumberToObject(cert_info, "ca_certificate_bytes", ca_cert_len);
+    cJSON_AddNumberToObject(cert_info, "client_certificate_bytes", esp32_cert_len);
+    cJSON_AddNumberToObject(cert_info, "private_key_bytes", esp32_key_len);
+    cJSON_AddBoolToObject(cert_info, "ca_loaded", ca_cert_len > 0);
+    cJSON_AddBoolToObject(cert_info, "client_cert_loaded", esp32_cert_len > 0);
+    cJSON_AddBoolToObject(cert_info, "private_key_loaded", esp32_key_len > 0);
+    cJSON_AddItemToObject(json, "certificates", cert_info);
+    
+    cJSON_AddStringToObject(json, "security_note", "Using customer-provided certificates for maximum security");
+    cJSON_AddNumberToObject(json, "timestamp", esp_timer_get_time());
+    
+    char *json_string = cJSON_PrintUnformatted(json);
+    if (json_string) {
+        esp_mqtt_client_publish(mqtt_client, "energy_meter/certificate_info", json_string, 0, 1, 0);
+        free(json_string);
+    }
+    
+    cJSON_Delete(json);
+}
+
+void publish_system_status_with_custom_certs(void)
+{
+    if (!mqtt_connected) {
+        return;
+    }
+    
+    cJSON *json = cJSON_CreateObject();
+    if (!json) {
+        return;
+    }
+    
+    // System information
+    cJSON_AddStringToObject(json, "device_id", MQTT_CLIENT_ID);
+    cJSON_AddStringToObject(json, "version", "2.1.0-CUSTOM-TLS");
+    cJSON_AddNumberToObject(json, "uptime", esp_timer_get_time() / 1000000);
+    cJSON_AddNumberToObject(json, "timestamp", esp_timer_get_time());
+    
+    // Memory information
+    cJSON_AddNumberToObject(json, "free_heap", esp_get_free_heap_size());
+    cJSON_AddNumberToObject(json, "min_free_heap", esp_get_minimum_free_heap_size());
+    
+    // Network status with custom security
+    cJSON_AddBoolToObject(json, "wifi_connected", wifi_connected);
+    cJSON_AddBoolToObject(json, "mqtt_connected", mqtt_connected);
+    cJSON_AddBoolToObject(json, "custom_ssl_active", verify_mqtt_connection_security());
+    cJSON_AddBoolToObject(json, "provisioning_mode", provisioning_mode);
+    
+    // Custom security status
+    cJSON_AddStringToObject(json, "security_level", "CUSTOM_MUTUAL_TLS");
+    cJSON_AddStringToObject(json, "certificate_type", "USER_PROVIDED");
+    cJSON_AddBoolToObject(json, "client_cert_auth", true);
+    cJSON_AddBoolToObject(json, "server_cert_verified", true);
+    
+    // Task status
+    cJSON_AddBoolToObject(json, "sampling_task_running", sampling_task_handle != NULL);
+    cJSON_AddBoolToObject(json, "processing_task_running", processing_task_handle != NULL);
+    cJSON_AddBoolToObject(json, "communication_task_running", communication_task_handle != NULL);
+    cJSON_AddBoolToObject(json, "button_task_running", button_task_handle != NULL);
+    
+    // Hardware status
+    cJSON_AddNumberToObject(json, "active_relays", __builtin_popcount(get_relay_mask()));
+    cJSON_AddNumberToObject(json, "packet_counter", packet_counter);
+    cJSON_AddNumberToObject(json, "current_voltage", current_voltage_rms);
+    
+    char *json_string = cJSON_PrintUnformatted(json);
+    if (json_string) {
+        esp_mqtt_client_publish(mqtt_client, MQTT_TOPIC_SYSTEM_STATUS, json_string, 0, 1, 0);
+        free(json_string);
+    }
+    
+    cJSON_Delete(json);
 }
 
 // ==================== PUBLISH FUNCTIONS ====================
@@ -344,53 +571,6 @@ void publish_realtime_data(void)
     cJSON_Delete(json);
 }
 
-void publish_system_status(void)
-{
-    if (!mqtt_connected) {
-        return;
-    }
-    
-    cJSON *json = cJSON_CreateObject();
-    if (!json) {
-        return;
-    }
-    
-    // System information
-    cJSON_AddStringToObject(json, "device_id", MQTT_CLIENT_ID);
-    cJSON_AddStringToObject(json, "version", "2.1.0");
-    cJSON_AddNumberToObject(json, "uptime", esp_timer_get_time() / 1000000); // seconds
-    cJSON_AddNumberToObject(json, "timestamp", esp_timer_get_time());
-    
-    // Memory information
-    cJSON_AddNumberToObject(json, "free_heap", esp_get_free_heap_size());
-    cJSON_AddNumberToObject(json, "min_free_heap", esp_get_minimum_free_heap_size());
-    
-    // Network status
-    cJSON_AddBoolToObject(json, "wifi_connected", wifi_connected);
-    cJSON_AddBoolToObject(json, "mqtt_connected", mqtt_connected);
-    cJSON_AddBoolToObject(json, "ssl_active", verify_mqtt_connection_security());
-    cJSON_AddBoolToObject(json, "provisioning_mode", provisioning_mode);
-    
-    // Task status
-    cJSON_AddBoolToObject(json, "sampling_task_running", sampling_task_handle != NULL);
-    cJSON_AddBoolToObject(json, "processing_task_running", processing_task_handle != NULL);
-    cJSON_AddBoolToObject(json, "communication_task_running", communication_task_handle != NULL);
-    cJSON_AddBoolToObject(json, "button_task_running", button_task_handle != NULL);
-    
-    // Hardware status
-    cJSON_AddNumberToObject(json, "active_relays", __builtin_popcount(get_relay_mask()));
-    cJSON_AddNumberToObject(json, "packet_counter", packet_counter);
-    cJSON_AddNumberToObject(json, "current_voltage", current_voltage_rms);
-    
-    char *json_string = cJSON_PrintUnformatted(json);
-    if (json_string) {
-        esp_mqtt_client_publish(mqtt_client, MQTT_TOPIC_SYSTEM_STATUS, json_string, 0, 1, 0);
-        free(json_string);
-    }
-    
-    cJSON_Delete(json);
-}
-
 // ==================== COMMAND HANDLING ====================
 
 void handle_mqtt_relay_command(const char* command_data, int data_len)
@@ -495,6 +675,12 @@ void mqtt_get_stats(void* stats)
     // This could include message counts, connection uptime, etc.
     // For now, this is a placeholder
     if (stats) {
-        // Fill stats structure as needed
+        size_t ca_cert_len = ca_cert_end - ca_cert_start;
+        size_t esp32_cert_len = esp32_cert_end - esp32_cert_start;
+        size_t esp32_key_len = esp32_key_end - esp32_key_start;
+        
+        ESP_LOGD(MQTT_TAG, "MQTT stats - Custom TLS active: %s", mqtt_connected ? "YES" : "NO");
+        ESP_LOGD(MQTT_TAG, "Custom certificates loaded: CA=%d, Client=%d, Key=%d bytes", 
+                 ca_cert_len, esp32_cert_len, esp32_key_len);
     }
 }

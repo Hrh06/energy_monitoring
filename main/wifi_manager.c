@@ -371,9 +371,9 @@ esp_err_t root_handler(httpd_req_t *req)
         "</form>"
         "<div class='info' style='margin-top:20px;'>"
         "<h3>Security Features</h3>"
-        "<p>• All data transmission uses SSL/TLS encryption</p>"
-        "<p>• Credentials stored securely in device memory</p>"
-        "<p>• Real-time monitoring with 1-second updates</p>"
+        "<p>- All data transmission uses SSL/TLS encryption</p>"
+        "<p>- Credentials stored securely in device memory</p>"
+        "<p>- Real-time monitoring with 1-second updates</p>"
         "</div>"
         "</div></body></html>";
     

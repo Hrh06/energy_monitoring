@@ -57,11 +57,11 @@
 #define PROVISIONING_TIMEOUT_MS 300000
 
 // MQTT Configuration
-#define MQTT_BROKER_URL "bluequeen-5ddc56ca.a03.euc1.aws.hivemq.cloud"
+#define MQTT_BROKER_URL "192.168.1.21"
 #define MQTT_BROKER_PORT 8883
 #define MQTT_USERNAME "Bitminds"
 #define MQTT_PASSWORD "Bitminds@123456"
-#define MQTT_CLIENT_ID "esp32_energy_meter"
+#define MQTT_CLIENT_ID "esp32_energy_meter_001"
 
 // MQTT Topics
 #define MQTT_TOPIC_DATA "energy_meter/data"
@@ -186,9 +186,28 @@ extern TaskHandle_t button_task_handle;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 
-// SSL Certificates (extern references)
-extern const uint8_t mqtt_broker_cert_pem_start[] asm("_binary_mqtt_broker_cert_pem_start");
-extern const uint8_t mqtt_broker_cert_pem_end[]   asm("_binary_mqtt_broker_cert_pem_end");
+// MQTT Client functions (add these to the existing declarations)
+void publish_system_status_with_custom_certs(void);
+void publish_custom_security_status(void);
+void publish_certificate_info(void);
+
+// ==================== CUSTOM SSL CERTIFICATES ====================
+
+// Your custom CA certificate (to verify HiveMQ server)
+extern const uint8_t ca_cert_start[] asm("_binary_ca_cert_crt_start");
+extern const uint8_t ca_cert_end[]   asm("_binary_ca_cert_crt_end");
+
+// Your custom ESP32 client certificate (for client authentication)
+extern const uint8_t esp32_cert_start[] asm("_binary_esp32_cert_crt_start");
+extern const uint8_t esp32_cert_end[]   asm("_binary_esp32_cert_crt_end");
+
+// Your custom ESP32 private key (for client authentication)
+extern const uint8_t esp32_key_start[] asm("_binary_esp32_key_start");
+extern const uint8_t esp32_key_end[]   asm("_binary_esp32_key_end");
+
+// Keep old reference for backward compatibility (can be removed later)
+extern const uint8_t mqtt_broker_cert_pem_start[] asm("_binary_ca_crt_start");
+extern const uint8_t mqtt_broker_cert_pem_end[]   asm("_binary_ca_crt_end");
 
 // ==================== FUNCTION PROTOTYPES ====================
 

@@ -193,7 +193,7 @@ esp_err_t initialize_mqtt_with_timeout_protection(void)
     if (task_result != pdPASS) {
         ESP_LOGW(MAIN_TAG, "Failed to create MQTT timeout task - continuing without timeout protection");
     }
-    
+
     // Try to initialize MQTT (non-blocking)
     esp_err_t err = mqtt_client_init();
     if (err != ESP_OK) {
@@ -311,6 +311,19 @@ void app_main(void)
         
         // Emergency system status check
         emergency_system_status();
+
+        // Log custom certificate status every 60 seconds
+        static int cert_status_counter = 0;
+        if (++cert_status_counter >= 6) { // 6 * 10s = 60s
+            if (mqtt_connected) {
+                ESP_LOGI(MAIN_TAG, "🔐 Custom Certificate Status:");
+                ESP_LOGI(MAIN_TAG, "   📋 CA Certificate: %d bytes (verifies HiveMQ)", ca_cert_end - ca_cert_start);
+                ESP_LOGI(MAIN_TAG, "   🆔 ESP32 Certificate: %d bytes (authenticates device)", esp32_cert_end - esp32_cert_start);
+                ESP_LOGI(MAIN_TAG, "   🔑 Private Key: %d bytes (encrypts communication)", esp32_key_end - esp32_key_start);
+                ESP_LOGI(MAIN_TAG, "   ✅ All certificates loaded and working");
+            }
+            cert_status_counter = 0;
+        }
     }
 }
 

@@ -53,7 +53,9 @@ idf_component_register(
         spi_flash      # Added for ESP-IDF v4.4
         nghttp         # Added for ESP-IDF v4.4
     EMBED_FILES
-        "../certs/mqtt_broker_cert.pem"
+        "../certs/ca_cert.crt"
+        "../certs/esp32_cert.crt"
+        "../certs/esp32_key.key"
 )
 
 # Auto-create certificates if they don't exist
@@ -61,23 +63,20 @@ execute_process(
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/certs"
 )
 
-# Create dummy MQTT certificate
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/certs/mqtt_broker_cert.pem")
-    file(WRITE "${CMAKE_SOURCE_DIR}/certs/mqtt_broker_cert.pem"
-"-----BEGIN CERTIFICATE-----
-MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF
-ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6
-b24gUm9vdCBDQSAxMB4XDTE1MDUyNjAwMDAwMFoXDTM4MDExNzAwMDAwMFowOTEL
-MAkGA1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJv
-b3QgQ0EgMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJ4gHHKeNXj
-ca9HgFB0fW7Y14h29Jlo91ghYPl0hAEvrAIthtOgQ3pOsqTQNroBvo3bSMgHFzZM
-9O6II8c+6zf1tRn4SWiw3te5djgdYZ6k/oI2peVKVuRF4fn9tBb6dNqcmzU5L/qw
-IFAGbHrQgLKm+a/sRxmPUDgH3KKHOVj4utWp+UhnMJbulHheb4mjUcAwhmahRWa6
-VOujw5H5SNz/0egwLX0tdHA114gk957EWW67c4cX8jJGKLhD+rcdqsq08p8kDi1L
-93FcXmn/6pUCyziKrlA4b9v7LWIbxcceVOF34GfID5yHI9Y/QCB/IIDEgEw+OyQm
-jgSubJrIqg0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMC
-AYYwHQYDVR0OBBYEFIQYzIU07LwMlJQuCFmcx7IQTgoIMA0GCSqGSIb3DQEBCwUA
-A4IBAQCY8jdaQZChGsV2USggNiMOruYou6r4lK5IpDB/G/wkjUu0yKGX9rbxenDI
-U5PMCCjjmCXPI6T53iHTfIuJruydjsw2hUwsqdnksL6GjubTOB+Ureo0SKHM6v8P
------END CERTIFICATE-----")
+# Check if your custom certificates exist
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/certs/ca_cert.crt")
+    message(FATAL_ERROR "❌ ca.crt not found in certs/ directory. Please add your CA certificate.")
 endif()
+
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/certs/esp32_cert.crt")
+    message(FATAL_ERROR "❌ esp32.crt not found in certs/ directory. Please add your ESP32 client certificate.")
+endif()
+
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/certs/esp32_key.key")
+    message(FATAL_ERROR "❌ esp32.key not found in certs/ directory. Please add your ESP32 private key.")
+endif()
+
+message(STATUS "✅ All custom certificates found and will be embedded")
+message(STATUS "   - CA Certificate: ${CMAKE_SOURCE_DIR}/certs/ca_cert.crt")
+message(STATUS "   - ESP32 Certificate: ${CMAKE_SOURCE_DIR}/certs/esp32_cert.crt") 
+message(STATUS "   - ESP32 Private Key: ${CMAKE_SOURCE_DIR}/certs/esp32_key.key")

@@ -625,7 +625,7 @@ void communication_task(void *pvParameters)
         
         // Publish system status every 30 seconds
         if (mqtt_connected && (current_time - last_system_status_time) >= pdMS_TO_TICKS(30000)) {
-            publish_system_status();
+            publish_system_status_with_custom_certs();
             last_system_status_time = current_time;
         }
         

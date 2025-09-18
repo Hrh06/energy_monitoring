@@ -49,9 +49,19 @@ void publish_relay_status(void);
 void publish_realtime_data(void);
 
 /**
- * @brief Publish system status information
+ * @brief Publish system status information with custom certificate details
  */
-void publish_system_status(void);
+void publish_system_status_with_custom_certs(void);
+
+/**
+ * @brief Publish detailed custom security status (NEW)
+ */
+void publish_custom_security_status(void);
+
+/**
+ * @brief Publish information about your custom certificates (NEW)
+ */
+void publish_certificate_info(void);
 
 /**
  * @brief Handle incoming MQTT relay control commands
