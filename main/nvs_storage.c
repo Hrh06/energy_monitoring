@@ -248,22 +248,62 @@ void save_certificates_to_nvs(void)
         return;
     }
     
+    size_t ca_cert_len = ca_cert_end - ca_cert_start;
+    size_t esp32_cert_len = esp32_cert_end - esp32_cert_start;
+    size_t esp32_key_len = esp32_key_end - esp32_key_start;
+
     // Store MQTT broker certificate
-    size_t cert_len = mqtt_broker_cert_pem_end - mqtt_broker_cert_pem_start;
-    if (cert_len > 0) {
-        err = nvs_set_blob(nvs_handle, "mqtt_cert", mqtt_broker_cert_pem_start, cert_len);
+    if (ca_cert_len > 0) {
+        err = nvs_set_blob(nvs_handle, "ca_cert_info", &ca_cert_len, sizeof(ca_cert_len));
         if (err != ESP_OK) {
-            ESP_LOGE(NVS_TAG, "Error saving MQTT certificate: %s", esp_err_to_name(err));
+            ESP_LOGE(NVS_TAG, "Error saving CA certificate: %s", esp_err_to_name(err));
         } else {
-            ESP_LOGI(NVS_TAG, "MQTT certificate saved (%d bytes)", cert_len);
+            ESP_LOGI(NVS_TAG, "MQTT certificate saved (%d bytes)", ca_cert_len);
         }
     }
     
+    // Store ESP32 client certificate info
+    if (esp32_cert_len > 0) {
+        err = nvs_set_blob(nvs_handle, "esp32_cert_info", &esp32_cert_len, sizeof(esp32_cert_len));
+        if (err != ESP_OK) {
+            ESP_LOGE(NVS_TAG, "Error saving ESP32 certificate info: %s", esp_err_to_name(err));
+        } else {
+            ESP_LOGI(NVS_TAG, "ESP32 certificate info saved (%d bytes)", esp32_cert_len);
+        }
+    }
+
+    // Store private key info
+    if (esp32_key_len > 0) {
+        err = nvs_set_blob(nvs_handle, "esp32_key_info", &esp32_key_len, sizeof(esp32_key_len));
+        if (err != ESP_OK) {
+            ESP_LOGE(NVS_TAG, "Error saving ESP32 private key info: %s", esp_err_to_name(err));
+        } else {
+            ESP_LOGI(NVS_TAG, "ESP32 private key info saved (%d bytes)", esp32_key_len);
+        }
+    }
+
+    // Store certificate file names for reference
+    const char* cert_files_info = "ca_cert.crt|esp32_cert.crt|esp32_key.key";
+    err = nvs_set_str(nvs_handle, "cert_files", cert_files_info);
+    if (err != ESP_OK) {
+        ESP_LOGE(NVS_TAG, "Error saving certificate file names: %s", esp_err_to_name(err));
+    }
+
+    // Store timestamp
+    int64_t timestamp = esp_timer_get_time();
+    err = nvs_set_i64(nvs_handle, "cert_save_time", timestamp);
+    if (err != ESP_OK) {
+        ESP_LOGE(NVS_TAG, "Error saving certificate timestamp: %s", esp_err_to_name(err));
+    }
+
     err = nvs_commit(nvs_handle);
     if (err != ESP_OK) {
         ESP_LOGE(NVS_TAG, "Error committing certificates: %s", esp_err_to_name(err));
     }
     
     nvs_close(nvs_handle);
-    ESP_LOGI(NVS_TAG, "Certificates saved to NVS successfully");
+    ESP_LOGI(NVS_TAG, "✅ Certificate information saved to NVS successfully");
+    ESP_LOGI(NVS_TAG, "   📋 CA Certificate: %d bytes", ca_cert_len);
+    ESP_LOGI(NVS_TAG, "   🆔 ESP32 Certificate: %d bytes", esp32_cert_len);
+    ESP_LOGI(NVS_TAG, "   🔑 Private Key: %d bytes", esp32_key_len);
 }

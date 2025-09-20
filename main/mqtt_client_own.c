@@ -25,13 +25,15 @@ esp_err_t mqtt_client_init(void)
         return ESP_ERR_NOT_FOUND;
     }
 
+    ESP_LOGI(MQTT_TAG, "Connecting to %s:%d (SSL with client certificates)", MQTT_BROKER_URL, MQTT_BROKER_PORT);
+
     //Build broker URI
-    char broker_uri[128];
-    snprintf(broker_uri, sizeof(broker_uri), "mqtts://%s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
+    //char broker_uri[128];
+    //snprintf(broker_uri, sizeof(broker_uri), "mqtts://%s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
     
-    ESP_LOGI(MQTT_TAG, "Connecting to: %s", broker_uri);
-    ESP_LOGI(MQTT_TAG, "Username: %s", MQTT_USERNAME);
-    ESP_LOGI(MQTT_TAG, "🆔 Client ID: %s", MQTT_CLIENT_ID);
+    //ESP_LOGI(MQTT_TAG, "Connecting to: %s", broker_uri);
+    //ESP_LOGI(MQTT_TAG, "Username: %s", MQTT_USERNAME);
+    //ESP_LOGI(MQTT_TAG, "🆔 Client ID: %s", MQTT_CLIENT_ID);
 
     // ✅ FIXED: ESP-IDF v4.4 compatible configuration structure
     esp_mqtt_client_config_t mqtt_cfg = {
@@ -39,14 +41,14 @@ esp_err_t mqtt_client_init(void)
         .event_handle = NULL,
         
         // Broker connection
-        .uri = broker_uri,
+        //.uri = broker_uri,
         .host = MQTT_BROKER_URL,
         .port = MQTT_BROKER_PORT,
         .transport = MQTT_TRANSPORT_OVER_SSL,
         
         // Authentication
-        .username = MQTT_USERNAME,
-        .password = MQTT_PASSWORD,
+        .username = NULL,
+        .password = NULL,
         
         // TLS/SSL certificates (YOUR custom certificates)
         .cert_pem = (const char *)ca_cert_start,           // CA certificate
@@ -55,6 +57,9 @@ esp_err_t mqtt_client_init(void)
         .client_cert_len = esp32_cert_len,
         .client_key_pem = (const char *)esp32_key_start,   // Private key
         .client_key_len = esp32_key_len,
+        
+        // SSL verification
+        .use_global_ca_store = false,
         .skip_cert_common_name_check = false,
         
         // Session settings
@@ -63,13 +68,13 @@ esp_err_t mqtt_client_init(void)
         
         // Last Will and Testament
         .lwt_topic = MQTT_TOPIC_SYSTEM_STATUS,
-        .lwt_msg = "{\"status\":\"offline\",\"reason\":\"disconnect\"}",
+        .lwt_msg = "{\"status\":\"offline\",\"timestamp\":0}",
         .lwt_msg_len = 0, // Use strlen if 0
         .lwt_qos = 1,
         .lwt_retain = false,
-        
+
         // Network timeouts
-        .network_timeout_ms = 10000,
+        .network_timeout_ms = 30000,
         .refresh_connection_after_ms = 20000,
         .disable_auto_reconnect = false,
         
@@ -82,10 +87,10 @@ esp_err_t mqtt_client_init(void)
         .task_stack = 8192,
         
         // Client ID (optional, will be auto-generated if NULL)
-        .client_id = NULL
+        .client_id = MQTT_CLIENT_ID
     };
     
-    ESP_LOGI(MQTT_TAG, "HiveMQ Configuration:");
+    ESP_LOGI(MQTT_TAG, "MQTT Configuration:");
     ESP_LOGI(MQTT_TAG, "  Host: %s", MQTT_BROKER_URL);
     ESP_LOGI(MQTT_TAG, "  Port: %d", MQTT_BROKER_PORT);
     ESP_LOGI(MQTT_TAG, "  Username: %s", MQTT_USERNAME);
@@ -108,7 +113,7 @@ esp_err_t mqtt_client_init(void)
         return err;
     }
 
-    ESP_LOGI(MQTT_TAG, "MQTT HiveMQ Cloud SSL/TLS client initialized successfully");
+    ESP_LOGI(MQTT_TAG, "MQTT Cloud SSL/TLS client initialized successfully");
     
     return ESP_OK;
 }
@@ -153,13 +158,13 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
     
     switch (event_id) {
         case MQTT_EVENT_BEFORE_CONNECT:
-            ESP_LOGI(MQTT_TAG, "🔄 Connecting to HiveMQ Cloud SSL broker...");
+            ESP_LOGI(MQTT_TAG, "🔄 Connecting to MQTT Cloud SSL broker...");
             ESP_LOGI(MQTT_TAG, "Target: %s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
             break;
 
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(MQTT_TAG, "MQTT Connected to broker with SSL/TLS encryption");
-            ESP_LOGI(MQTT_TAG, "✅ HiveMQ server verified with your CA certificate");
+            ESP_LOGI(MQTT_TAG, "✅ MQTT server verified with your CA certificate");
             ESP_LOGI(MQTT_TAG, "✅ ESP32 client authenticated with your custom certificate");
             ESP_LOGI(MQTT_TAG, "🔐 Communication encrypted with your private key");
             mqtt_connected = true;
@@ -231,7 +236,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
                 ESP_LOGW(MQTT_TAG, "SSL/TLS transport error: 0x%x", event->error_handle->esp_tls_last_esp_err);
                 ESP_LOGW(MQTT_TAG, "SSL/TLS stack error: 0x%x", event->error_handle->esp_tls_stack_err);
                 // Specific HiveMQ troubleshooting
-                ESP_LOGE(MQTT_TAG, "🏢 HiveMQ Cloud Troubleshooting:");
+                ESP_LOGE(MQTT_TAG, "🏢 MQTT Cloud Troubleshooting:");
                 ESP_LOGE(MQTT_TAG, "  1. Check cluster status at HiveMQ Cloud Console");
                 ESP_LOGE(MQTT_TAG, "  2. Verify credentials: Username=%s", MQTT_USERNAME);
                 ESP_LOGE(MQTT_TAG, "  3. Ensure certificate matches HiveMQ requirements");
@@ -239,7 +244,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
                 ESP_LOGE(MQTT_TAG, "  5. Verify port 8883 is not blocked by firewall");
 
             } else if (event->error_handle->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
-                ESP_LOGE(MQTT_TAG, "🚫 Connection refused by HiveMQ Cloud");
+                ESP_LOGE(MQTT_TAG, "🚫 Connection refused by MQTT Cloud");
                 ESP_LOGE(MQTT_TAG, "💡 Check username/password: %s", MQTT_USERNAME);
             }
             

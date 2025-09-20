@@ -57,10 +57,10 @@
 #define PROVISIONING_TIMEOUT_MS 300000
 
 // MQTT Configuration
-#define MQTT_BROKER_URL "192.168.1.21"
+#define MQTT_BROKER_URL "10.87.76.79"
 #define MQTT_BROKER_PORT 8883
-#define MQTT_USERNAME "Bitminds"
-#define MQTT_PASSWORD "Bitminds@123456"
+#define MQTT_USERNAME ""
+#define MQTT_PASSWORD ""
 #define MQTT_CLIENT_ID "esp32_energy_meter_001"
 
 // MQTT Topics
@@ -202,12 +202,12 @@ extern const uint8_t esp32_cert_start[] asm("_binary_esp32_cert_crt_start");
 extern const uint8_t esp32_cert_end[]   asm("_binary_esp32_cert_crt_end");
 
 // Your custom ESP32 private key (for client authentication)
-extern const uint8_t esp32_key_start[] asm("_binary_esp32_key_start");
-extern const uint8_t esp32_key_end[]   asm("_binary_esp32_key_end");
+extern const uint8_t esp32_key_start[] asm("_binary_esp32_key_key_start");
+extern const uint8_t esp32_key_end[]   asm("_binary_esp32_key_key_end");
 
 // Keep old reference for backward compatibility (can be removed later)
-extern const uint8_t mqtt_broker_cert_pem_start[] asm("_binary_ca_crt_start");
-extern const uint8_t mqtt_broker_cert_pem_end[]   asm("_binary_ca_crt_end");
+//extern const uint8_t mqtt_broker_cert_pem_start[] asm("_binary_ca_crt_start");
+//extern const uint8_t mqtt_broker_cert_pem_end[]   asm("_binary_ca_crt_end");
 
 // ==================== FUNCTION PROTOTYPES ====================
 
