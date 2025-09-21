@@ -5,24 +5,105 @@ static const char* MQTT_TAG = "MQTT_CLIENT";
 
 // ==================== MQTT CLIENT INITIALIZATION ====================
 
-esp_err_t mqtt_client_init(void)
+// Create null-terminated certificate strings
+static char* ca_cert_str = NULL;
+static char* esp32_cert_str = NULL;
+static char* esp32_key_str = NULL;
+
+static esp_err_t prepare_certificates(void)
 {
-    ESP_LOGI(MQTT_TAG, "Initializing MQTT client with SSL/TLS...");
+    ESP_LOGI(MQTT_TAG, "Preparing null-terminated certificates...");
     
-    // Check your custom certificate sizes
     size_t ca_cert_len = ca_cert_end - ca_cert_start;
     size_t esp32_cert_len = esp32_cert_end - esp32_cert_start;
     size_t esp32_key_len = esp32_key_end - esp32_key_start;
     
-    ESP_LOGI(MQTT_TAG, "📋 Custom Certificate sizes:");
-    ESP_LOGI(MQTT_TAG, "   🏛️  CA Certificate: %d bytes", ca_cert_len);
-    ESP_LOGI(MQTT_TAG, "   📜 ESP32 Certificate: %d bytes", esp32_cert_len);
-    ESP_LOGI(MQTT_TAG, "   🔑 ESP32 Private Key: %d bytes", esp32_key_len);
+    ESP_LOGI(MQTT_TAG, "Raw certificate sizes: CA=%d, Client=%d, Key=%d", 
+             ca_cert_len, esp32_cert_len, esp32_key_len);
+
+    // Validate certificate sizes
+    if (ca_cert_len == 0 || ca_cert_len > 4096) {
+        ESP_LOGE(MQTT_TAG, "Invalid CA certificate size: %d bytes", ca_cert_len);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (esp32_cert_len == 0 || esp32_cert_len > 4096) {
+        ESP_LOGE(MQTT_TAG, "Invalid ESP32 certificate size: %d bytes", esp32_cert_len);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (esp32_key_len == 0 || esp32_key_len > 4096) {
+        ESP_LOGE(MQTT_TAG, "Invalid private key size: %d bytes", esp32_key_len);
+        return ESP_ERR_INVALID_SIZE;
+    }
     
-    // Validate certificates are loaded
-    if (ca_cert_len == 0) {
-        ESP_LOGE(MQTT_TAG, "❌ CA certificate not found or empty!");
-        return ESP_ERR_NOT_FOUND;
+    // Free existing certificates if any
+    if (ca_cert_str) {
+        free(ca_cert_str);
+        ca_cert_str = NULL;
+    }
+    if (esp32_cert_str) {
+        free(esp32_cert_str);
+        esp32_cert_str = NULL;
+    }
+    if (esp32_key_str) {
+        free(esp32_key_str);
+        esp32_key_str = NULL;
+    }
+
+    // Allocate memory for null-terminated certificates
+    ca_cert_str = malloc(ca_cert_len + 1);
+    esp32_cert_str = malloc(esp32_cert_len + 1);
+    esp32_key_str = malloc(esp32_key_len + 1);
+    
+    if (!ca_cert_str || !esp32_cert_str || !esp32_key_str) {
+        ESP_LOGE(MQTT_TAG, "Failed to allocate memory for certificates");
+        if (ca_cert_str) free(ca_cert_str);
+        if (esp32_cert_str) free(esp32_cert_str);
+        if (esp32_key_str) free(esp32_key_str);
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Copy certificates and null-terminate
+    memcpy(ca_cert_str, ca_cert_start, ca_cert_len);
+    ca_cert_str[ca_cert_len] = '\0';
+    
+    memcpy(esp32_cert_str, esp32_cert_start, esp32_cert_len);
+    esp32_cert_str[esp32_cert_len] = '\0';
+    
+    memcpy(esp32_key_str, esp32_key_start, esp32_key_len);
+    esp32_key_str[esp32_key_len] = '\0';
+
+    ESP_LOGI(MQTT_TAG, "✅ Certificates prepared and null-terminated:");
+    ESP_LOGI(MQTT_TAG, "   📋 CA Certificate: %d bytes", ca_cert_len);
+    ESP_LOGI(MQTT_TAG, "   📜 ESP32 Certificate: %d bytes", esp32_cert_len);
+    ESP_LOGI(MQTT_TAG, "   🔑 Private Key: %d bytes", esp32_key_len);
+    
+    // Validate certificate format
+    if (strstr(ca_cert_str, "-----BEGIN CERTIFICATE-----") == NULL) {
+        ESP_LOGE(MQTT_TAG, "CA certificate format invalid - missing BEGIN marker");
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (strstr(esp32_cert_str, "-----BEGIN CERTIFICATE-----") == NULL) {
+        ESP_LOGE(MQTT_TAG, "ESP32 certificate format invalid - missing BEGIN marker");
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (strstr(esp32_key_str, "-----BEGIN PRIVATE KEY-----") == NULL) {
+        ESP_LOGE(MQTT_TAG, "Private key format invalid - missing BEGIN marker");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    ESP_LOGI(MQTT_TAG, "✅ Certificate format validation passed");
+    return ESP_OK;
+}
+
+esp_err_t mqtt_client_init(void)
+{
+    ESP_LOGI(MQTT_TAG, "Initializing MQTT client with SSL/TLS...");
+    
+    // Prepare null-terminated certificates first
+    esp_err_t cert_err = prepare_certificates();
+    if (cert_err != ESP_OK) {
+        ESP_LOGE(MQTT_TAG, "Failed to prepare certificates: %s", esp_err_to_name(cert_err));
+        return cert_err;
     }
 
     ESP_LOGI(MQTT_TAG, "Connecting to %s:%d (SSL with client certificates)", MQTT_BROKER_URL, MQTT_BROKER_PORT);
@@ -31,14 +112,10 @@ esp_err_t mqtt_client_init(void)
     //char broker_uri[128];
     //snprintf(broker_uri, sizeof(broker_uri), "mqtts://%s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
     
-    //ESP_LOGI(MQTT_TAG, "Connecting to: %s", broker_uri);
-    //ESP_LOGI(MQTT_TAG, "Username: %s", MQTT_USERNAME);
-    //ESP_LOGI(MQTT_TAG, "🆔 Client ID: %s", MQTT_CLIENT_ID);
-
     // ✅ FIXED: ESP-IDF v4.4 compatible configuration structure
     esp_mqtt_client_config_t mqtt_cfg = {
         // Event handler
-        .event_handle = NULL,
+        //.event_handle = NULL,
         
         // Broker connection
         //.uri = broker_uri,
@@ -46,21 +123,19 @@ esp_err_t mqtt_client_init(void)
         .port = MQTT_BROKER_PORT,
         .transport = MQTT_TRANSPORT_OVER_SSL,
         
-        // Authentication
-        .username = NULL,
-        .password = NULL,
+        // Authentication (empty username/password for certificate-based auth)
+        .username = strlen(MQTT_USERNAME) > 0 ? MQTT_USERNAME : NULL,
+        .password = strlen(MQTT_PASSWORD) > 0 ? MQTT_PASSWORD : NULL,
         
-        // TLS/SSL certificates (YOUR custom certificates)
-        .cert_pem = (const char *)ca_cert_start,           // CA certificate
-        .cert_len = ca_cert_len,
-        .client_cert_pem = (const char *)esp32_cert_start, // Client certificate
-        .client_cert_len = esp32_cert_len,
-        .client_key_pem = (const char *)esp32_key_start,   // Private key
-        .client_key_len = esp32_key_len,
+        // ✅ FIXED: Use null-terminated certificate strings
+        .cert_pem = ca_cert_str,                    // CA certificate (null-terminated)
+        .client_cert_pem = esp32_cert_str,          // Client certificate (null-terminated)
+        .client_key_pem = esp32_key_str,            // Private key (null-terminated)
         
-        // SSL verification
+        // SSL/TLS settings
         .use_global_ca_store = false,
-        .skip_cert_common_name_check = false,
+        .skip_cert_common_name_check = true,
+        .disable_auto_reconnect = false,
         
         // Session settings
         .disable_clean_session = false,
@@ -69,14 +144,12 @@ esp_err_t mqtt_client_init(void)
         // Last Will and Testament
         .lwt_topic = MQTT_TOPIC_SYSTEM_STATUS,
         .lwt_msg = "{\"status\":\"offline\",\"timestamp\":0}",
-        .lwt_msg_len = 0, // Use strlen if 0
         .lwt_qos = 1,
         .lwt_retain = false,
 
         // Network timeouts
         .network_timeout_ms = 30000,
         .refresh_connection_after_ms = 20000,
-        .disable_auto_reconnect = false,
         
         // Buffer sizes
         .buffer_size = 4096,
@@ -97,7 +170,10 @@ esp_err_t mqtt_client_init(void)
     ESP_LOGI(MQTT_TAG, "  Client ID: %s", MQTT_CLIENT_ID);
     ESP_LOGI(MQTT_TAG, "  SSL/TLS: ENABLED");
     ESP_LOGI(MQTT_TAG, "  Certificate: %d bytes", mqtt_cfg.cert_len);
-    
+    ESP_LOGI(MQTT_TAG, "  CA Cert: %d bytes", strlen(ca_cert_str));
+    ESP_LOGI(MQTT_TAG, "  Client Cert: %d bytes", strlen(esp32_cert_str));
+    ESP_LOGI(MQTT_TAG, "  Private Key: %d bytes", strlen(esp32_key_str));
+
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
     if (mqtt_client == NULL) {
         ESP_LOGE(MQTT_TAG, "Failed to initialize MQTT client");
@@ -114,7 +190,6 @@ esp_err_t mqtt_client_init(void)
     }
 
     ESP_LOGI(MQTT_TAG, "MQTT Cloud SSL/TLS client initialized successfully");
-    
     return ESP_OK;
 }
 
@@ -129,10 +204,16 @@ void mqtt_client_start(void)
         ESP_LOGD(MQTT_TAG, "MQTT client already connected");
         return;
     }
+
+    ESP_LOGI(MQTT_TAG, "Starting MQTT client...");
+    ESP_LOGI(MQTT_TAG, "MQTT client start initiated - waiting for connection...");
+    ESP_LOGI(MQTT_TAG, "🔄 Connecting to MQTT Cloud SSL broker...");
+    ESP_LOGI(MQTT_TAG, "Target: %s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
     
     ESP_LOGI(MQTT_TAG, "Starting MQTT client...");
     esp_err_t err = esp_mqtt_client_start(mqtt_client);
     if (err != ESP_OK) {
+        ESP_LOGE(MQTT_TAG, "Client has started");
         ESP_LOGE(MQTT_TAG, "Failed to start MQTT client: %s", esp_err_to_name(err));
     } else {
         ESP_LOGI(MQTT_TAG, "MQTT client start initiated - waiting for connection...");
@@ -235,17 +316,29 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
                 ESP_LOGW(MQTT_TAG, "SSL/TLS transport error: 0x%x", event->error_handle->esp_tls_last_esp_err);
                 ESP_LOGW(MQTT_TAG, "SSL/TLS stack error: 0x%x", event->error_handle->esp_tls_stack_err);
-                // Specific HiveMQ troubleshooting
-                ESP_LOGE(MQTT_TAG, "🏢 MQTT Cloud Troubleshooting:");
-                ESP_LOGE(MQTT_TAG, "  1. Check cluster status at HiveMQ Cloud Console");
-                ESP_LOGE(MQTT_TAG, "  2. Verify credentials: Username=%s", MQTT_USERNAME);
-                ESP_LOGE(MQTT_TAG, "  3. Ensure certificate matches HiveMQ requirements");
-                ESP_LOGE(MQTT_TAG, "  4. Check network connectivity to AWS region");
-                ESP_LOGE(MQTT_TAG, "  5. Verify port 8883 is not blocked by firewall");
+                
+                // Detailed SSL error analysis
+                if (event->error_handle->esp_tls_last_esp_err == ESP_ERR_MBEDTLS_X509_CRT_PARSE_FAILED) {
+                    ESP_LOGE(MQTT_TAG, "🚨 Certificate parsing failed!");
+                    ESP_LOGE(MQTT_TAG, "💡 Certificate troubleshooting:");
+                    ESP_LOGE(MQTT_TAG, "  1. Check certificate format (PEM with BEGIN/END markers)");
+                    ESP_LOGE(MQTT_TAG, "  2. Verify certificate is not corrupted");
+                    ESP_LOGE(MQTT_TAG, "  3. Ensure certificate is properly null-terminated");
+                    ESP_LOGE(MQTT_TAG, "  4. Check certificate validity dates");
+                } else if (event->error_handle->esp_tls_stack_err == 0x2180) {
+                    ESP_LOGE(MQTT_TAG, "🚨 mbedTLS certificate parsing error 0x2180");
+                    ESP_LOGE(MQTT_TAG, "💡 This usually indicates:");
+                    ESP_LOGE(MQTT_TAG, "  1. Invalid PEM format");
+                    ESP_LOGE(MQTT_TAG, "  2. Missing null termination");
+                    ESP_LOGE(MQTT_TAG, "  3. Corrupted certificate data");
+                }
 
             } else if (event->error_handle->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
-                ESP_LOGE(MQTT_TAG, "🚫 Connection refused by MQTT Cloud");
-                ESP_LOGE(MQTT_TAG, "💡 Check username/password: %s", MQTT_USERNAME);
+                ESP_LOGE(MQTT_TAG, "🚫 Connection refused by MQTT broker");
+                ESP_LOGE(MQTT_TAG, "💡 Check:");
+                ESP_LOGE(MQTT_TAG, "  1. Broker address: %s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
+                ESP_LOGE(MQTT_TAG, "  2. Network connectivity");
+                ESP_LOGE(MQTT_TAG, "  3. Certificate authentication");
             }
             
             mqtt_connected = false;
@@ -255,6 +348,36 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             ESP_LOGD(MQTT_TAG, "MQTT SSL Other event id: %d", event_id);
             break;
     }
+}
+
+// ==================== CERTIFICATE CLEANUP ====================
+
+void mqtt_client_cleanup(void)
+{
+    ESP_LOGI(MQTT_TAG, "Cleaning up MQTT client resources...");
+    
+    if (mqtt_client) {
+        esp_mqtt_client_stop(mqtt_client);
+        esp_mqtt_client_destroy(mqtt_client);
+        mqtt_client = NULL;
+    }
+    
+    // Free certificate memory
+    if (ca_cert_str) {
+        free(ca_cert_str);
+        ca_cert_str = NULL;
+    }
+    if (esp32_cert_str) {
+        free(esp32_cert_str);
+        esp32_cert_str = NULL;
+    }
+    if (esp32_key_str) {
+        free(esp32_key_str);
+        esp32_key_str = NULL;
+    }
+    
+    mqtt_connected = false;
+    ESP_LOGI(MQTT_TAG, "MQTT client cleanup completed");
 }
 
 // ==================== CUSTOM CERTIFICATE STATUS PUBLISHERS ====================
@@ -680,12 +803,11 @@ void mqtt_get_stats(void* stats)
     // This could include message counts, connection uptime, etc.
     // For now, this is a placeholder
     if (stats) {
-        size_t ca_cert_len = ca_cert_end - ca_cert_start;
-        size_t esp32_cert_len = esp32_cert_end - esp32_cert_start;
-        size_t esp32_key_len = esp32_key_end - esp32_key_start;
-        
         ESP_LOGD(MQTT_TAG, "MQTT stats - Custom TLS active: %s", mqtt_connected ? "YES" : "NO");
-        ESP_LOGD(MQTT_TAG, "Custom certificates loaded: CA=%d, Client=%d, Key=%d bytes", 
-                 ca_cert_len, esp32_cert_len, esp32_key_len);
+        ESP_LOGD(MQTT_TAG, "Null-terminated certificates: CA=%s, Client=%s, Key=%s", 
+                 ca_cert_str ? "OK" : "NULL", 
+                 esp32_cert_str ? "OK" : "NULL", 
+                 esp32_key_str ? "OK" : "NULL");
     }
+    
 }

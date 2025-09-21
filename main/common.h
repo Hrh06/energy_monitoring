@@ -186,11 +186,6 @@ extern TaskHandle_t button_task_handle;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 
-// MQTT Client functions (add these to the existing declarations)
-void publish_system_status_with_custom_certs(void);
-void publish_custom_security_status(void);
-void publish_certificate_info(void);
-
 // ==================== CUSTOM SSL CERTIFICATES ====================
 
 // Your custom CA certificate (to verify HiveMQ server)
@@ -204,10 +199,6 @@ extern const uint8_t esp32_cert_end[]   asm("_binary_esp32_cert_crt_end");
 // Your custom ESP32 private key (for client authentication)
 extern const uint8_t esp32_key_start[] asm("_binary_esp32_key_key_start");
 extern const uint8_t esp32_key_end[]   asm("_binary_esp32_key_key_end");
-
-// Keep old reference for backward compatibility (can be removed later)
-//extern const uint8_t mqtt_broker_cert_pem_start[] asm("_binary_ca_crt_start");
-//extern const uint8_t mqtt_broker_cert_pem_end[]   asm("_binary_ca_crt_end");
 
 // ==================== FUNCTION PROTOTYPES ====================
 
@@ -238,10 +229,14 @@ esp_err_t mqtt_client_init(void);
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
 void mqtt_client_start(void);
 void mqtt_client_stop(void);
+void mqtt_client_cleanup(void);
 void publish_sensor_data(complete_data_packet_t *packet);
 void publish_relay_status(void);
 void publish_realtime_data(void);
 void publish_system_status(void);
+void publish_system_status_with_custom_certs(void);  // ✅ FIXED: Added proper declaration
+void publish_custom_security_status(void);
+void publish_certificate_info(void);
 void handle_mqtt_relay_command(const char* command_data, int data_len);
 bool verify_mqtt_connection_security(void);
 bool mqtt_is_connected(void);
