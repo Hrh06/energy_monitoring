@@ -160,7 +160,7 @@ esp_err_t mqtt_client_init(void)
         .task_stack = 8192,
         
         // Client ID (optional, will be auto-generated if NULL)
-        .client_id = MQTT_CLIENT_ID
+        .client_id = NULL
     };
     
     ESP_LOGI(MQTT_TAG, "MQTT Configuration:");
