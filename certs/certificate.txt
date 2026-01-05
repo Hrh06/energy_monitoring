@@ -1,0 +1,8 @@
+Add the certificate files in this folder.
+change the certificate file name in the code.
+you can use openssl to create the certificate. Refer the README file for the guidelines to create a mutual certificate that mutual connect the server and the client.
+"ca_cert.crt"
+"esp32_cert.crt"
+"esp32_key.key"
+
+these are the certificate file names that is used in the code.
