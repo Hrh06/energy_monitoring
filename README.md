@@ -74,7 +74,7 @@ All dependencies are standard ESP-IDF components:
 ### 1. Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Hrh06/energy_monitoring.get
 cd energy_meter_project
 ```
 
