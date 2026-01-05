@@ -605,8 +605,11 @@ void communication_task(void *pvParameters)
         
         // MQTT connection maintenance
         if (wifi_connected && !mqtt_connected) {
-            ESP_LOGI(ENERGY_TAG, "Attempting MQTT connection...");
-            mqtt_client_start();
+            if (wifi_is_connected()) {  // Only try if WiFi is up
+                mqtt_client_start();
+            }
+            vTaskDelay(pdMS_TO_TICKS(5000));  // Wait 5s before retrying to avoid races
+            continue;
         }
         
         TickType_t current_time = xTaskGetTickCount();

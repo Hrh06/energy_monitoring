@@ -4,6 +4,7 @@
 #include "mqtt_client_own.h"
 #include "relay_control.h"
 #include "energy_meter.h"
+#include "tft_display.h"
 
 // ==================== GLOBAL VARIABLE DEFINITIONS ====================
 
@@ -32,6 +33,7 @@ TaskHandle_t sampling_task_handle = NULL;
 TaskHandle_t processing_task_handle = NULL;
 TaskHandle_t communication_task_handle = NULL;
 TaskHandle_t button_task_handle = NULL;
+TaskHandle_t tft_display_task_handle = NULL;
 
 // MQTT initialization flag
 bool mqtt_initialized = false;
@@ -193,7 +195,7 @@ esp_err_t initialize_mqtt_with_timeout_protection(void)
     if (task_result != pdPASS) {
         ESP_LOGW(MAIN_TAG, "Failed to create MQTT timeout task - continuing without timeout protection");
     }
-
+/*
     // Try to initialize MQTT (non-blocking)
     esp_err_t err = mqtt_client_init();
     if (err != ESP_OK) {
@@ -204,7 +206,7 @@ esp_err_t initialize_mqtt_with_timeout_protection(void)
     
     mqtt_initialized = true;
     ESP_LOGI(MAIN_TAG, "✅ MQTT client initialized successfully");
-    
+    */
     // Delete timeout task if MQTT initialized successfully
     if (mqtt_timeout_task) {
         vTaskDelete(mqtt_timeout_task);
@@ -242,6 +244,30 @@ void app_main(void)
     }
     ESP_LOGI(MAIN_TAG, "ULTRA HIGH PRIORITY button system active");
     
+    esp_err_t tft_init_result = tft_display_init();
+    if (tft_init_result == ESP_OK) {
+        ESP_LOGI(MAIN_TAG, "TFT display initialized successfully");
+        // Create TFT display task
+        BaseType_t tft_task_result = xTaskCreatePinnedToCore(
+            tft_display_task,
+            "tft_display",
+            8192,          // Stack size
+            NULL,
+            3,             // Priority (medium)
+            &tft_display_task_handle,
+            0              // Core 0
+        );
+        
+        if (tft_task_result == pdPASS) {
+            ESP_LOGI(MAIN_TAG, "TFT display task created successfully");
+        } else {
+            ESP_LOGE(MAIN_TAG, "Failed to create TFT display task");
+        }
+    } else {
+        ESP_LOGE(MAIN_TAG, "TFT display initialization failed: %s", 
+                esp_err_to_name(tft_init_result));
+    }
+
     err = relay_control_init();
     if (err != ESP_OK) {
         ESP_LOGE(MAIN_TAG, "Relay control init failed: %s", esp_err_to_name(err));
@@ -259,6 +285,17 @@ void app_main(void)
         esp_restart();
     }
     
+    // Try to initialize MQTT (non-blocking)
+    err = mqtt_client_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(MAIN_TAG, "MQTT client initialization failed: %s", esp_err_to_name(err));
+        ESP_LOGW(MAIN_TAG, "System continues running - Button remains fully functional");
+        return err;
+    }
+    
+    mqtt_initialized = true;
+    ESP_LOGI(MAIN_TAG, "✅ MQTT client initialized successfully");
+
     // Create application tasks
     err = init_ultra_priority_tasks();
     if (err != ESP_OK) {

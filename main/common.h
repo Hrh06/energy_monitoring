@@ -41,10 +41,10 @@
 #define VOLTAGE_SENSOR_PIN ADC1_CHANNEL_6  // GPIO 34 (input-only)
 #define CURRENT_SENSOR_PIN ADC1_CHANNEL_7  // GPIO 35 (input-only)
 #define RESET_BUTTON_PIN 4
-#define STATUS_LED_PIN 2
-#define SHIFT_REG_DATA_PIN 5     // DS pin
-#define SHIFT_REG_CLOCK_PIN 18    // SH_CP pin  
-#define SHIFT_REG_LATCH_PIN 19   // ST_CP pin
+#define STATUS_LED_PIN 13
+#define SHIFT_REG_DATA_PIN 27     // DS pin
+#define SHIFT_REG_CLOCK_PIN 26    // SH_CP pin  
+#define SHIFT_REG_LATCH_PIN 25   // ST_CP pin
 #define UART_NUM UART_NUM_2
 #define UART_TX_PIN 17
 #define UART_RX_PIN 16
@@ -175,12 +175,14 @@ extern float current_voltage_rms;
 // MQTT client handle
 extern esp_mqtt_client_handle_t mqtt_client;
 extern httpd_handle_t server;
+extern bool mqtt_start_in_progress;
 
 // Task handles
 extern TaskHandle_t sampling_task_handle;
 extern TaskHandle_t processing_task_handle;
 extern TaskHandle_t communication_task_handle;
 extern TaskHandle_t button_task_handle;
+extern TaskHandle_t tft_display_task_handle;
 
 // WiFi event bits
 #define WIFI_CONNECTED_BIT BIT0

@@ -8,6 +8,7 @@ idf_component_register(
         "mqtt_client_own.c"
         "relay_control.c"
         "energy_meter.c"      
+        "tft_display.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 

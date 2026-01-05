@@ -9,6 +9,7 @@ static const char* MQTT_TAG = "MQTT_CLIENT";
 static char* ca_cert_str = NULL;
 static char* esp32_cert_str = NULL;
 static char* esp32_key_str = NULL;
+bool mqtt_start_in_progress = false;
 
 static esp_err_t prepare_certificates(void)
 {
@@ -108,17 +109,8 @@ esp_err_t mqtt_client_init(void)
 
     ESP_LOGI(MQTT_TAG, "Connecting to %s:%d (SSL with client certificates)", MQTT_BROKER_URL, MQTT_BROKER_PORT);
 
-    //Build broker URI
-    //char broker_uri[128];
-    //snprintf(broker_uri, sizeof(broker_uri), "mqtts://%s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
-    
     // ✅ FIXED: ESP-IDF v4.4 compatible configuration structure
     esp_mqtt_client_config_t mqtt_cfg = {
-        // Event handler
-        //.event_handle = NULL,
-        
-        // Broker connection
-        //.uri = broker_uri,
         .host = MQTT_BROKER_URL,
         .port = MQTT_BROKER_PORT,
         .transport = MQTT_TRANSPORT_OVER_SSL,
@@ -195,28 +187,22 @@ esp_err_t mqtt_client_init(void)
 
 void mqtt_client_start(void)
 {
-    if (!wifi_connected || !mqtt_client) {
-        ESP_LOGW(MQTT_TAG, "Cannot start MQTT client - WiFi not connected or client not initialized");
+    if (mqtt_start_in_progress) {
+        ESP_LOGW(MQTT_TAG, "MQTT start already in progress - skipping redundant call");
         return;
     }
-    
-    if (mqtt_connected) {
-        ESP_LOGD(MQTT_TAG, "MQTT client already connected");
-        return;
-    }
+    mqtt_start_in_progress = true;
 
     ESP_LOGI(MQTT_TAG, "Starting MQTT client...");
-    ESP_LOGI(MQTT_TAG, "MQTT client start initiated - waiting for connection...");
     ESP_LOGI(MQTT_TAG, "🔄 Connecting to MQTT Cloud SSL broker...");
     ESP_LOGI(MQTT_TAG, "Target: %s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
-    
-    ESP_LOGI(MQTT_TAG, "Starting MQTT client...");
+
     esp_err_t err = esp_mqtt_client_start(mqtt_client);
     if (err != ESP_OK) {
-        ESP_LOGE(MQTT_TAG, "Client has started");
         ESP_LOGE(MQTT_TAG, "Failed to start MQTT client: %s", esp_err_to_name(err));
+        mqtt_start_in_progress = false;  // Reset on failure
     } else {
-        ESP_LOGI(MQTT_TAG, "MQTT client start initiated - waiting for connection...");
+        ESP_LOGI(MQTT_TAG, "MQTT client start initiated successfully - waiting for connection...");
     }
 }
 
@@ -238,11 +224,6 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
     esp_mqtt_client_handle_t client = event->client;
     
     switch (event_id) {
-        case MQTT_EVENT_BEFORE_CONNECT:
-            ESP_LOGI(MQTT_TAG, "🔄 Connecting to MQTT Cloud SSL broker...");
-            ESP_LOGI(MQTT_TAG, "Target: %s:%d", MQTT_BROKER_URL, MQTT_BROKER_PORT);
-            break;
-
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(MQTT_TAG, "MQTT Connected to broker with SSL/TLS encryption");
             ESP_LOGI(MQTT_TAG, "✅ MQTT server verified with your CA certificate");
@@ -260,6 +241,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             // Publish initial status
             publish_relay_status();
             publish_system_status_with_custom_certs();
+            mqtt_start_in_progress = false;
             break;
             
         case MQTT_EVENT_DISCONNECTED:
@@ -342,6 +324,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             }
             
             mqtt_connected = false;
+            mqtt_start_in_progress = false;
             break;
 
         default:
