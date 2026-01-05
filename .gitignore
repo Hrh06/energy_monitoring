@@ -1,6 +1,6 @@
 build/
 sdkconfig
 sdkconfig.old
-certs/ca_cert.crt
-certs/esp32_cert.crt
-certs/esp32_key.key
+ca_cert.crt
+esp32_cert.crt
+esp32_key.key
